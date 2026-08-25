@@ -9,6 +9,12 @@ import {
   InstancesTreeProvider,
   JenkinsInstanceTreeItem
 } from './tree/InstancesTreeProvider';
+import {
+  JenkinsBuildsMoreTreeItem,
+  JenkinsBuildTreeItem,
+  JenkinsJobTreeItem,
+  JobsTreeProvider
+} from './tree/JobsTreeProvider';
 import { formatError } from './utils/errors';
 import { createRedactedLog } from './utils/logger';
 import { JenkinsInstancePanel } from './webview/JenkinsInstancePanel';
@@ -32,9 +38,15 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(instancesTreeView);
 
+  const jobsTreeProvider = new JobsTreeProvider(configManager, clientPool, { log });
+  const jobsTreeView = vscode.window.createTreeView('atJenkins.jobs', {
+    treeDataProvider: jobsTreeProvider
+  });
+  context.subscriptions.push(jobsTreeView);
+
   const refreshAll = (): void => {
     instancesTreeProvider.refresh();
-    vscode.commands.executeCommand('atJenkins.refreshJobs').then(undefined, () => {});
+    jobsTreeProvider.refresh();
   };
 
   context.subscriptions.push(
@@ -258,6 +270,119 @@ export function activate(context: vscode.ExtensionContext): void {
 
         await configManager.setActiveInstanceId(instanceId);
         refreshAll();
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('atJenkins.refreshJobs', () => {
+      jobsTreeProvider.refresh();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.loadMoreBuilds',
+      (target?: JenkinsJobTreeItem | JenkinsBuildsMoreTreeItem | string) => {
+        if (target) {
+          jobsTreeProvider.loadMoreBuilds(target);
+        }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.openPipelineScript',
+      async (target?: JenkinsJobTreeItem | string) => {
+        const jobFullName =
+          typeof target === 'string'
+            ? target
+            : target instanceof JenkinsJobTreeItem
+              ? target.job.fullName
+              : undefined;
+        if (!jobFullName) {
+          return;
+        }
+        vscode.window.showInformationMessage(
+          t('Open Pipeline Script for "{job}"', { job: jobFullName })
+        );
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.openBuildLog',
+      async (target?: JenkinsBuildTreeItem | { jobFullName: string; buildNumber: number }) => {
+        let info: { jobFullName: string; buildNumber: number } | undefined;
+        if (target instanceof JenkinsBuildTreeItem) {
+          info = { jobFullName: target.jobFullName, buildNumber: target.build.number };
+        } else if (
+          target &&
+          typeof target === 'object' &&
+          'jobFullName' in target &&
+          'buildNumber' in target
+        ) {
+          info = target;
+        }
+        if (!info) {
+          return;
+        }
+        vscode.window.showInformationMessage(
+          t('Open Build Log for "{job} #{build}"', {
+            job: info.jobFullName,
+            build: info.buildNumber
+          })
+        );
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.triggerBuild',
+      async (target?: JenkinsJobTreeItem | string) => {
+        const jobFullName =
+          typeof target === 'string'
+            ? target
+            : target instanceof JenkinsJobTreeItem
+              ? target.job.fullName
+              : undefined;
+        if (!jobFullName) {
+          return;
+        }
+        vscode.window.showInformationMessage(
+          t('Trigger Build for "{job}"', { job: jobFullName })
+        );
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.stopBuild',
+      async (target?: JenkinsBuildTreeItem | { jobFullName: string; buildNumber: number }) => {
+        let info: { jobFullName: string; buildNumber: number } | undefined;
+        if (target instanceof JenkinsBuildTreeItem) {
+          info = { jobFullName: target.jobFullName, buildNumber: target.build.number };
+        } else if (
+          target &&
+          typeof target === 'object' &&
+          'jobFullName' in target &&
+          'buildNumber' in target
+        ) {
+          info = target;
+        }
+        if (!info) {
+          return;
+        }
+        vscode.window.showInformationMessage(
+          t('Stop Build for "{job} #{build}"', {
+            job: info.jobFullName,
+            build: info.buildNumber
+          })
+        );
       }
     )
   );

@@ -75,6 +75,36 @@
         "command": "atJenkins.setActiveInstance",
         "title": "%atJenkins.command.setActiveInstance.title%",
         "icon": "$(check)"
+      },
+      {
+        "command": "atJenkins.refreshJobs",
+        "title": "%atJenkins.command.refreshJobs.title%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "atJenkins.loadMoreBuilds",
+        "title": "%atJenkins.command.loadMoreBuilds.title%",
+        "icon": "$(more)"
+      },
+      {
+        "command": "atJenkins.openPipelineScript",
+        "title": "%atJenkins.command.openPipelineScript.title%",
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "atJenkins.openBuildLog",
+        "title": "%atJenkins.command.openBuildLog.title%",
+        "icon": "$(output)"
+      },
+      {
+        "command": "atJenkins.triggerBuild",
+        "title": "%atJenkins.command.triggerBuild.title%",
+        "icon": "$(play)"
+      },
+      {
+        "command": "atJenkins.stopBuild",
+        "title": "%atJenkins.command.stopBuild.title%",
+        "icon": "$(debug-stop)"
       }
     ],
     "menus": {
@@ -94,6 +124,26 @@
         {
           "command": "atJenkins.setActiveInstance",
           "when": "false"
+        },
+        {
+          "command": "atJenkins.loadMoreBuilds",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.openPipelineScript",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.openBuildLog",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.triggerBuild",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.stopBuild",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -106,6 +156,11 @@
           "command": "atJenkins.refreshInstances",
           "when": "view == atJenkins.instances",
           "group": "navigation@2"
+        },
+        {
+          "command": "atJenkins.refreshJobs",
+          "when": "view == atJenkins.jobs",
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
@@ -128,6 +183,31 @@
           "command": "atJenkins.deleteInstance",
           "when": "view == atJenkins.instances && viewItem =~ /^atJenkins\\.instance/",
           "group": "atJenkins.action@3"
+        },
+        {
+          "command": "atJenkins.loadMoreBuilds",
+          "when": "view == atJenkins.jobs && viewItem == jenkinsBuildsMore",
+          "group": "inline@1"
+        },
+        {
+          "command": "atJenkins.triggerBuild",
+          "when": "view == atJenkins.jobs && (viewItem == jenkinsJob || viewItem =~ /^jenkinsJob\\./)",
+          "group": "inline@1"
+        },
+        {
+          "command": "atJenkins.openPipelineScript",
+          "when": "view == atJenkins.jobs && viewItem == jenkinsJob.pipeline",
+          "group": "inline@2"
+        },
+        {
+          "command": "atJenkins.openBuildLog",
+          "when": "view == atJenkins.jobs && (viewItem == jenkinsBuild || viewItem =~ /^jenkinsBuild\\./)",
+          "group": "inline@1"
+        },
+        {
+          "command": "atJenkins.stopBuild",
+          "when": "view == atJenkins.jobs && viewItem == jenkinsBuild.building",
+          "group": "inline@2"
         }
       ]
     },

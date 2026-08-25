@@ -10,6 +10,12 @@
   "atJenkins.command.testConnection.title": "Test Connection",
   "atJenkins.command.refreshInstances.title": "Refresh Controllers",
   "atJenkins.command.setActiveInstance.title": "Set as Active Controller",
+  "atJenkins.command.refreshJobs.title": "Refresh Jobs",
+  "atJenkins.command.loadMoreBuilds.title": "Load More Builds",
+  "atJenkins.command.openPipelineScript.title": "Open Pipeline Script",
+  "atJenkins.command.openBuildLog.title": "Open Build Log",
+  "atJenkins.command.triggerBuild.title": "Trigger Build",
+  "atJenkins.command.stopBuild.title": "Stop Build",
   "atJenkins.welcome.instances": "No Jenkins controllers configured.\n[Add Controller](command:atJenkins.addInstance)",
   "atJenkins.welcome.jobs": "No active controller selected or no jobs found.\n[Add Controller](command:atJenkins.addInstance)"
 }

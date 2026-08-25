@@ -1,0 +1,63 @@
+# 更新日志 (Changelog)
+
+所有关键版本的更新记录都将在此文档中记录。
+
+---
+
+## [v0.1.0] - 2026-08-25
+
+**AT Jenkins 首发版本正式发布！🎉**
+
+AT Jenkins 是一款面向 VS Code 与 Cursor 的专业级 Jenkins CI/CD 管理与流水线协同插件，作为 AT Series 开发者套件的一员，为 DevOps 工程师与开发者提供无缝的 IDE 原生任务导航、构建触发与停止、流水线脚本编辑、控制台日志实时跟踪以及 AI Agent MCP 互通能力。
+
+### 🌟 核心特性与功能亮点
+
+#### 1. 多控制器与多鉴权管理 (Multi-Instance & Authentication)
+- **多实例统一管理**：支持配置多个 Jenkins Controller，随时切换当前活动控制器并即时刷新任务树。
+- **三种鉴权模式**：全面支持无认证 (None)、API Token（推荐）以及账号密码 (Username & Password) 搭配 CSRF Crumb 自动管理。
+- **安全凭据存储**：敏感密码及 Token 使用 VS Code 原生 `SecretStorage` 加密存储，不存明文配置。
+- **TLS 首次信任 (TOFU)**：HTTPS 自签名证书首次连接弹窗确认并计算 SHA-256 指纹记录，防中间人劫持。
+- **只读控制器保护 (`readOnly`)**：支持配置只读控制器，UI 禁用写操作，运行时底层硬拦截触发构建、停止构建及流水线保存。
+
+#### 2. 任务导航与构建历史 (Jobs & Builds Navigation)
+- **双栏视图设计**：
+  - **Controllers 视图**：展示所有已配置的 Jenkins 控制器列表与连接状态。
+  - **Jobs 视图**：树状展示任务层级，完整支持 Folder / 目录递归浏览。
+- **任务与状态识别**：智能区分 Pipeline 流水线任务（`WorkflowJob`）与 Freestyle 自由风格任务，通过图标颜色直观反映任务状态（成功/失败/构建中/已终止/不稳定）。
+- **增量构建分页**：构建列表支持按页加载（默认 10 条），提供「加载更多构建...」按需展开历史记录。
+
+#### 3. 虚拟文档与流式日志 (Virtual Documents & Logs)
+- **流水线脚本编辑 (`jenkins:` 协议)**：
+  - 虚拟文档打开控制器存储的 CPS 流水线脚本 (`jenkins://<instance>/pipeline/<job>.groovy`)。
+  - 原生 Groovy 语法高亮，支持在编辑器中直接修改并保存（`Cmd+S` / `Ctrl+S`）同步回 Jenkins 服务端。
+- **实时构建日志查看**：
+  - 虚拟文档打开构建控制台日志 (`jenkins://<instance>/build-log/<job>/<number>.log`)。
+  - 对正在运行的构建自动开启 3 秒轮询增量刷新，构建完成后自动停止轮询。
+- **输出通道跟踪 (Follow in Output)**：
+  - 支持将构建日志实时流式输出到 VS Code Output Channel（`AT Jenkins`），支持进度跟踪与终端式阅读。
+
+#### 4. 安全可控的构建操作 (Safe Build Operations)
+- **参数化构建弹窗**：触发构建时，自动解析任务定义的参数列表，交互式引导输入 String、Choice、Boolean、Password。
+- **停止构建**：对运行中的构建支持一键终止。
+- **二次确认与破坏性操作保护**：所有构建触发、终止与脚本保存操作均强制弹出模态确认对话框；若控制器处于只读模式则直接拒绝执行。
+
+#### 5. AI Agent 与 MCP 支持 (MCP Integration)
+- **内置 7 大只读 MCP 工具**（严格只读，UI 可写，MCP 只读）：
+  1. `jenkins_list_instances`：列出已开启后台访问的 Jenkins 控制器。
+  2. `jenkins_list_jobs`：查询任务列表（支持指定 `folder` 递归查询）。
+  3. `jenkins_get_job`：获取指定任务的详细元数据与参数定义。
+  4. `jenkins_get_pipeline_script`：获取控制器存储的 Pipeline 流水线脚本内容。
+  5. `jenkins_list_builds`：分页查询指定任务的构建历史记录。
+  6. `jenkins_get_build`：获取单次构建的详细信息（状态、耗时、时间戳、变更集等）。
+  7. `jenkins_get_build_log`：获取构建控制台日志文本（支持尾部 64 KiB 截断与 `start` 偏移量分块读取）。
+- **安全防线 (Hard Exclusions)**：
+  - **严格只读**：MCP 工具集坚决不提供任何写操作工具。
+  - **后台访问门禁 (`allowBackgroundAccess`)**：每个控制器实例独立提供后台访问开关（默认关闭），未开启时 Agent 无法通过 MCP 发现或查询该控制器。
+  - **敏感数据脱敏**：绝不在 MCP 工具响应中返回密码、Token 等敏感凭据。
+- **MCP Hub 互通**：内置 Bridge 桥接服务，无缝接入 `@at-series/mcp-hub` 统一协议。
+
+---
+
+### 🧪 自动化测试与工程质量
+- 包含 **310+** 自动化单元与集成测试，100% 通过率。
+- 完整的 TypeScript 类型安全与 i18n（英语与简体中文）双语支持。

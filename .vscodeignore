@@ -7,10 +7,11 @@
 .agents/**
 .package-work/**
 
-coverage/**
 docs/**
-!docs/
-!docs/*.md
+!docs/features.md
+!docs/features.zh-CN.md
+docs/superpowers/**
+**/superpowers/**
 
 src/**
 test/**
@@ -25,6 +26,7 @@ webview/**/*.ts
 *.log
 *.local
 **/*.map
+**/.DS_Store
 .DS_Store
 Thumbs.db
 desktop.ini

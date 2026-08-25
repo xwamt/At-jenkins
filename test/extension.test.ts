@@ -167,6 +167,21 @@ describe('extension activation and commands', () => {
   });
 
   it('executes jobs tree commands safely', async () => {
+    context.globalStateStore.set('atJenkins.instances', [
+      {
+        id: 'inst-active',
+        label: 'Active Jenkins',
+        baseUrl: 'https://ci.example.com',
+        authMode: 'none',
+        verifyTls: true,
+        readOnly: false,
+        allowBackgroundAccess: false,
+        createdAt: 100,
+        updatedAt: 100
+      }
+    ]);
+    context.globalStateStore.set('atJenkins.activeInstanceId', 'inst-active');
+
     activate(context);
 
     let infoMsg: string | undefined;
@@ -182,11 +197,11 @@ describe('extension activation and commands', () => {
     loadMore();
 
     const triggerBuild = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.triggerBuild')!;
-    await triggerBuild('backend/api');
-    expect(infoMsg).toContain('backend/api');
+    const resTrigger = await triggerBuild();
+    expect(resTrigger).toBe(false);
 
     const stopBuild = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.stopBuild')!;
-    await stopBuild({ jobFullName: 'backend/api', buildNumber: 42 });
-    expect(infoMsg).toContain('backend/api #42');
+    const resStop = await stopBuild();
+    expect(resStop).toBe(false);
   });
 });

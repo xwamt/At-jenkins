@@ -25,6 +25,7 @@ import {
 } from './tree/JobsTreeProvider';
 import { formatError } from './utils/errors';
 import { createRedactedLog } from './utils/logger';
+import { registerBuildCommands } from './commands/buildCommands';
 import { JenkinsInstancePanel } from './webview/JenkinsInstancePanel';
 import { disposeOpenPanels } from './webview/openPanels';
 
@@ -495,53 +496,12 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      'atJenkins.triggerBuild',
-      async (target?: JenkinsJobTreeItem | string) => {
-        const jobFullName =
-          typeof target === 'string'
-            ? target
-            : target instanceof JenkinsJobTreeItem
-              ? target.job.fullName
-              : undefined;
-        if (!jobFullName) {
-          return;
-        }
-        vscode.window.showInformationMessage(
-          t('Trigger Build for "{job}"', { job: jobFullName })
-        );
-      }
-    )
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand(
-      'atJenkins.stopBuild',
-      async (target?: JenkinsBuildTreeItem | { jobFullName: string; buildNumber: number }) => {
-        let info: { jobFullName: string; buildNumber: number } | undefined;
-        if (target instanceof JenkinsBuildTreeItem) {
-          info = { jobFullName: target.jobFullName, buildNumber: target.build.number };
-        } else if (
-          target &&
-          typeof target === 'object' &&
-          'jobFullName' in target &&
-          'buildNumber' in target
-        ) {
-          info = target;
-        }
-        if (!info) {
-          return;
-        }
-        vscode.window.showInformationMessage(
-          t('Stop Build for "{job} #{build}"', {
-            job: info.jobFullName,
-            build: info.buildNumber
-          })
-        );
-      }
-    )
-  );
+  registerBuildCommands(context, {
+    configManager,
+    clientPool,
+    jobsTreeProvider,
+    log
+  });
 }
 
 export function deactivate(): void {

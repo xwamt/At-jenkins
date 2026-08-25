@@ -649,7 +649,7 @@ EOF
 - Modify: Jobs tree context menus, `package.json`
 - Test: `test/commands/buildCommands.test.ts` (mock client + mock `showWarningMessage`)
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
 
 ```ts
 it('refuses trigger when readOnly', async () => { /* expect ReadOnly, client.triggerBuild not called */ });
@@ -658,14 +658,14 @@ it('passes parameters to buildWithParameters', async () => { /* ... */ });
 it('confirms before stopBuild', async () => { /* ... */ });
 ```
 
-- [ ] **Step 2: Implement**
+- [x] **Step 2: Implement**
 
 - No params: confirm → `triggerBuild`
 - Params from `getJob().parameters`: sequential QuickPick / InputBox per param (light path); if >5 params or choice lists awkward, add minimal webview later — **start with QuickPick/InputBox**
 - Stop: only when `building === true`
 - All paths check `readOnly` first
 
-- [ ] **Step 3: PASS + commit**
+- [x] **Step 3: PASS + commit**
 
 ```bash
 git commit -m "$(cat <<'EOF'

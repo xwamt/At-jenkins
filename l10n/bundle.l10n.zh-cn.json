@@ -99,5 +99,18 @@
   "Failed to load pipeline script for \"{job}\": {error}": "加载任务 \"{job}\" 的流水线脚本失败：{error}",
   "Failed to load build log for \"{job} #{build}\": {error}": "加载任务 \"{job} #{build}\" 的构建日志失败：{error}",
   "Follow Build Log in Output": "在输出通道中跟踪构建日志",
-  "No active Jenkins controller selected.": "未选择活动的 Jenkins 控制器。"
+  "No active Jenkins controller selected.": "未选择活动的 Jenkins 控制器。",
+  "Cannot trigger build: controller \"{label}\" is read-only.": "无法触发构建：控制器 \"{label}\" 为只读。",
+  "Cannot stop build: controller \"{label}\" is read-only.": "无法停止构建：控制器 \"{label}\" 为只读。",
+  "Are you sure you want to trigger build for \"{job}\"?": "确定要触发任务 \"{job}\" 的构建吗？",
+  "Are you sure you want to stop build #{number} of \"{job}\"?": "确定要停止任务 \"{job}\" 的构建 #{number} 吗？",
+  "Build triggered for \"{job}\".": "任务 \"{job}\" 的构建已触发。",
+  "Stop build requested for \"{job} #{number}\".": "已请求停止任务 \"{job} #{number}\" 的构建。",
+  "Failed to trigger build for \"{job}\": {error}": "触发任务 \"{job}\" 的构建失败：{error}",
+  "Failed to stop build for \"{job} #{number}\": {error}": "停止任务 \"{job} #{number}\" 的构建失败：{error}",
+  "Parameter: {name}": "参数：{name}",
+  "Select choice for {name}": "选择 {name} 的选项",
+  "Select value for {name}": "选择 {name} 的值",
+  "Enter value for {name}": "输入 {name} 的值",
+  "(default)": "（默认）"
 }

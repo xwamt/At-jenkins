@@ -1,4 +1,9 @@
 import * as vscode from 'vscode';
+import { detectHostApp } from '@at-series/mcp-hub';
+import { JenkinsAgentToolService } from './agent/JenkinsAgentToolService';
+import { BridgeServer } from './mcp/BridgeServer';
+import { syncPackagedHub } from './mcp/hubSync';
+import { ensureAtSeriesConfigForCurrentIde } from './mcp/McpConfigInstaller';
 import { JenkinsInstanceConfigManager } from './config/JenkinsInstanceConfigManager';
 import type { JenkinsInstanceConfig } from './config/schema';
 import { t } from './i18n/t';
@@ -29,6 +34,7 @@ import { registerBuildCommands } from './commands/buildCommands';
 import { JenkinsInstancePanel } from './webview/JenkinsInstancePanel';
 import { disposeOpenPanels } from './webview/openPanels';
 
+let extensionCleanup: { dispose(): Promise<void> } | undefined;
 let clientPool: JenkinsClientPool | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -502,10 +508,71 @@ export function activate(context: vscode.ExtensionContext): void {
     jobsTreeProvider,
     log
   });
+
+  const toolService = new JenkinsAgentToolService({
+    configManager,
+    clientPool,
+    log
+  });
+
+  const hostEnv = {
+    appName: vscode.env.appName,
+    appRoot: vscode.env.appRoot,
+    uriScheme: vscode.env.uriScheme,
+    extensionPath: context.extensionUri.fsPath
+  };
+  const hostApp = detectHostApp(hostEnv);
+  const currentWorkspaceFolder = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+  const bridgeServer = new BridgeServer({
+    hostApp,
+    pluginVersion:
+      typeof context.extension?.packageJSON?.version === 'string'
+        ? context.extension.packageJSON.version
+        : undefined,
+    toolService,
+    log
+  });
+  void bridgeServer.start().catch((error) => {
+    log.error(`bridge: failed to start: ${formatError(error)}`);
+  });
+
+  const hubReady = syncPackagedHub(context)
+    .then((result) => {
+      log.info(`hub-sync: ok (updated=${result.updated}, active=${result.activeVersion})`);
+      return result;
+    })
+    .catch((error) => {
+      log.error(`hub-sync: failed: ${formatError(error)}`);
+    });
+
+  void hubReady
+    .then(() => ensureAtSeriesConfigForCurrentIde({ ...hostEnv, workspaceFolder: currentWorkspaceFolder() }))
+    .catch((error) => {
+      log.error(`mcp-config: could not be updated: ${formatError(error)}`);
+    });
+
+  let disposed = false;
+  const cleanup = {
+    async dispose(): Promise<void> {
+      if (disposed) {
+        return;
+      }
+      disposed = true;
+      if (extensionCleanup === cleanup) {
+        extensionCleanup = undefined;
+      }
+      await bridgeServer.stop().catch(() => undefined);
+      disposeOpenPanels();
+      clientPool?.clear();
+      clientPool = undefined;
+      log.info('deactivate: AT Jenkins shut down');
+    }
+  };
+  extensionCleanup = cleanup;
 }
 
-export function deactivate(): void {
-  disposeOpenPanels();
-  clientPool?.clear();
-  clientPool = undefined;
+export async function deactivate(): Promise<void> {
+  await extensionCleanup?.dispose();
 }
+

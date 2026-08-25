@@ -18,6 +18,14 @@ const contextConfigs = [
     format: 'cjs',
     target: 'node18',
     external: ['vscode']
+  }),
+  esbuild.context({
+    ...common,
+    entryPoints: ['webview/jenkins-instance-form/index.ts'],
+    outfile: 'dist/webview/jenkins-instance-form.js',
+    platform: 'browser',
+    format: 'iife',
+    target: 'chrome114'
   })
 ];
 

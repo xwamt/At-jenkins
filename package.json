@@ -44,7 +44,103 @@
           "name": "%atJenkins.view.jobs.name%"
         }
       ]
-    }
+    },
+    "commands": [
+      {
+        "command": "atJenkins.addInstance",
+        "title": "%atJenkins.command.addInstance.title%",
+        "icon": "$(add)"
+      },
+      {
+        "command": "atJenkins.editInstance",
+        "title": "%atJenkins.command.editInstance.title%",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "atJenkins.deleteInstance",
+        "title": "%atJenkins.command.deleteInstance.title%",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "atJenkins.testConnection",
+        "title": "%atJenkins.command.testConnection.title%",
+        "icon": "$(debug-disconnect)"
+      },
+      {
+        "command": "atJenkins.refreshInstances",
+        "title": "%atJenkins.command.refreshInstances.title%",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "atJenkins.setActiveInstance",
+        "title": "%atJenkins.command.setActiveInstance.title%",
+        "icon": "$(check)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "atJenkins.editInstance",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.deleteInstance",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.testConnection",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.setActiveInstance",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "atJenkins.addInstance",
+          "when": "view == atJenkins.instances",
+          "group": "navigation@1"
+        },
+        {
+          "command": "atJenkins.refreshInstances",
+          "when": "view == atJenkins.instances",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "atJenkins.setActiveInstance",
+          "when": "view == atJenkins.instances && viewItem == atJenkins.instance.inactive",
+          "group": "inline@1"
+        },
+        {
+          "command": "atJenkins.testConnection",
+          "when": "view == atJenkins.instances && viewItem =~ /^atJenkins\\.instance/",
+          "group": "atJenkins.action@1"
+        },
+        {
+          "command": "atJenkins.editInstance",
+          "when": "view == atJenkins.instances && viewItem =~ /^atJenkins\\.instance/",
+          "group": "atJenkins.action@2"
+        },
+        {
+          "command": "atJenkins.deleteInstance",
+          "when": "view == atJenkins.instances && viewItem =~ /^atJenkins\\.instance/",
+          "group": "atJenkins.action@3"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "atJenkins.instances",
+        "contents": "%atJenkins.welcome.instances%"
+      },
+      {
+        "view": "atJenkins.jobs",
+        "contents": "%atJenkins.welcome.jobs%"
+      }
+    ]
   },
   "scripts": {
     "compile": "node esbuild.config.mjs",

@@ -3,5 +3,13 @@
   "atJenkins.description": "Browse Jenkins jobs, builds, and pipeline logs inside VS Code, with Agent (MCP) integration via AT Series.",
   "atJenkins.viewsContainer.title": "AT Jenkins",
   "atJenkins.view.instances.name": "Controllers",
-  "atJenkins.view.jobs.name": "Jobs"
+  "atJenkins.view.jobs.name": "Jobs",
+  "atJenkins.command.addInstance.title": "Add Controller",
+  "atJenkins.command.editInstance.title": "Edit Controller",
+  "atJenkins.command.deleteInstance.title": "Delete Controller",
+  "atJenkins.command.testConnection.title": "Test Connection",
+  "atJenkins.command.refreshInstances.title": "Refresh Controllers",
+  "atJenkins.command.setActiveInstance.title": "Set as Active Controller",
+  "atJenkins.welcome.instances": "No Jenkins controllers configured.\n[Add Controller](command:atJenkins.addInstance)",
+  "atJenkins.welcome.jobs": "No active controller selected or no jobs found.\n[Add Controller](command:atJenkins.addInstance)"
 }

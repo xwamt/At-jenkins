@@ -3,5 +3,13 @@
   "atJenkins.description": "在 VS Code 中浏览 Jenkins 任务、构建与流水线日志，并通过 AT Series 集成 Agent (MCP)。",
   "atJenkins.viewsContainer.title": "AT Jenkins",
   "atJenkins.view.instances.name": "控制器列表",
-  "atJenkins.view.jobs.name": "任务列表"
+  "atJenkins.view.jobs.name": "任务列表",
+  "atJenkins.command.addInstance.title": "添加控制器",
+  "atJenkins.command.editInstance.title": "编辑控制器",
+  "atJenkins.command.deleteInstance.title": "删除控制器",
+  "atJenkins.command.testConnection.title": "测试连接",
+  "atJenkins.command.refreshInstances.title": "刷新控制器",
+  "atJenkins.command.setActiveInstance.title": "设为当前控制器",
+  "atJenkins.welcome.instances": "未配置 Jenkins 控制器。\n[添加控制器](command:atJenkins.addInstance)",
+  "atJenkins.welcome.jobs": "未选择活动控制器或未找到任务。\n[添加控制器](command:atJenkins.addInstance)"
 }

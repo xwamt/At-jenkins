@@ -96,6 +96,27 @@ export const ThemeColor = class {
   constructor(public readonly id: string) {}
 };
 
+export class MarkdownString {
+  value: string;
+  isTrusted?: boolean;
+  supportThemeIcons?: boolean;
+
+  constructor(value = '', supportThemeIcons = false) {
+    this.value = value;
+    this.supportThemeIcons = supportThemeIcons;
+  }
+
+  appendMarkdown(value: string): MarkdownString {
+    this.value += value;
+    return this;
+  }
+
+  appendText(value: string): MarkdownString {
+    this.value += value;
+    return this;
+  }
+}
+
 export interface TextDocument {
   uri: Uri;
   fileName: string;

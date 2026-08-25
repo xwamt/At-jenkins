@@ -1,0 +1,7 @@
+{
+  "atJenkins.displayName": "AT Jenkins",
+  "atJenkins.description": "在 VS Code 中浏览 Jenkins 任务、构建与流水线日志，并通过 AT Series 集成 Agent (MCP)。",
+  "atJenkins.viewsContainer.title": "AT Jenkins",
+  "atJenkins.view.instances.name": "控制器列表",
+  "atJenkins.view.jobs.name": "任务列表"
+}

@@ -1,0 +1,7 @@
+{
+  "atJenkins.displayName": "AT Jenkins",
+  "atJenkins.description": "Browse Jenkins jobs, builds, and pipeline logs inside VS Code, with Agent (MCP) integration via AT Series.",
+  "atJenkins.viewsContainer.title": "AT Jenkins",
+  "atJenkins.view.instances.name": "Controllers",
+  "atJenkins.view.jobs.name": "Jobs"
+}

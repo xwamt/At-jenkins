@@ -1,0 +1,66 @@
+{
+  "name": "at-jenkins",
+  "displayName": "%atJenkins.displayName%",
+  "description": "%atJenkins.description%",
+  "version": "0.1.0",
+  "publisher": "local",
+  "icon": "media/at-jenkins-icon.png",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "jenkins",
+    "pipeline",
+    "mcp",
+    "at-series"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "atJenkins",
+          "title": "%atJenkins.viewsContainer.title%",
+          "icon": "media/at-jenkins-activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "atJenkins": [
+        {
+          "id": "atJenkins.instances",
+          "name": "%atJenkins.view.instances.name%"
+        },
+        {
+          "id": "atJenkins.jobs",
+          "name": "%atJenkins.view.jobs.name%"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "compile": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "package": "npm run compile && npx @vscode/vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "@at-series/mcp-hub": "^0.3.2",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "@types/vscode": "^1.134.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

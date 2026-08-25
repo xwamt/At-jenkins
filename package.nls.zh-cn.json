@@ -16,6 +16,7 @@
   "atJenkins.command.openBuildLog.title": "打开构建日志",
   "atJenkins.command.triggerBuild.title": "触发构建",
   "atJenkins.command.stopBuild.title": "停止构建",
+  "atJenkins.command.followBuildLogInOutput.title": "在输出通道中跟踪构建日志",
   "atJenkins.welcome.instances": "未配置 Jenkins 控制器。\n[添加控制器](command:atJenkins.addInstance)",
   "atJenkins.welcome.jobs": "未选择活动控制器或未找到任务。\n[添加控制器](command:atJenkins.addInstance)"
 }

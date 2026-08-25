@@ -5,6 +5,14 @@ import { t } from './i18n/t';
 import { createInteractiveCertVerifier } from './jenkins/createInteractiveCertVerifier';
 import { JenkinsCertTrustStore } from './jenkins/JenkinsCertTrustStore';
 import { JenkinsClientPool } from './jenkins/JenkinsClientPool';
+import { BuildLogDocumentProvider } from './document/BuildLogDocumentProvider';
+import { PipelineScriptDocumentProvider } from './document/PipelineScriptDocumentProvider';
+import {
+  buildBuildLogUri,
+  buildPipelineScriptUri,
+  JENKINS_DOCUMENT_SCHEME,
+  parseJenkinsDocumentUri
+} from './document/uri';
 import {
   InstancesTreeProvider,
   JenkinsInstanceTreeItem
@@ -43,6 +51,61 @@ export function activate(context: vscode.ExtensionContext): void {
     treeDataProvider: jobsTreeProvider
   });
   context.subscriptions.push(jobsTreeView);
+
+  const pipelineScriptProvider = new PipelineScriptDocumentProvider(
+    clientPool,
+    configManager,
+    { log }
+  );
+  const buildLogProvider = new BuildLogDocumentProvider(clientPool, { log });
+
+  const combinedContentProvider: vscode.TextDocumentContentProvider = {
+    onDidChange: (listener) => {
+      const d1 = pipelineScriptProvider.onDidChange(listener);
+      const d2 = buildLogProvider.onDidChange(listener);
+      return {
+        dispose: () => {
+          d1.dispose();
+          d2.dispose();
+        }
+      };
+    },
+    provideTextDocumentContent: (uri: vscode.Uri) => {
+      const target = parseJenkinsDocumentUri(uri);
+      if (target?.type === 'script') {
+        return pipelineScriptProvider.provideTextDocumentContent(uri);
+      }
+      if (target?.type === 'log') {
+        return buildLogProvider.provideTextDocumentContent(uri);
+      }
+      return `// ${t('Invalid Jenkins document URI.')}\n`;
+    }
+  };
+
+  context.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider(
+      JENKINS_DOCUMENT_SCHEME,
+      combinedContentProvider
+    )
+  );
+  context.subscriptions.push(pipelineScriptProvider);
+  context.subscriptions.push(buildLogProvider);
+
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (document) => {
+      if (document.uri.scheme === JENKINS_DOCUMENT_SCHEME) {
+        await pipelineScriptProvider.savePipelineScript(document);
+      }
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.workspace.onDidCloseTextDocument((document) => {
+      if (document.uri.scheme === JENKINS_DOCUMENT_SCHEME) {
+        buildLogProvider.handleDidCloseTextDocument(document);
+      }
+    })
+  );
 
   const refreshAll = (): void => {
     instancesTreeProvider.refresh();
@@ -294,19 +357,41 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'atJenkins.openPipelineScript',
-      async (target?: JenkinsJobTreeItem | string) => {
-        const jobFullName =
-          typeof target === 'string'
-            ? target
-            : target instanceof JenkinsJobTreeItem
-              ? target.job.fullName
-              : undefined;
+      async (target?: JenkinsJobTreeItem | { instanceId?: string; jobFullName: string } | string) => {
+        let jobFullName: string | undefined;
+        let instanceId: string | undefined;
+
+        if (typeof target === 'string') {
+          jobFullName = target;
+        } else if (target instanceof JenkinsJobTreeItem) {
+          jobFullName = target.job.fullName;
+          instanceId = target.instanceId;
+        } else if (target && typeof target === 'object' && 'jobFullName' in target) {
+          jobFullName = target.jobFullName;
+          instanceId = target.instanceId;
+        }
+
         if (!jobFullName) {
           return;
         }
-        vscode.window.showInformationMessage(
-          t('Open Pipeline Script for "{job}"', { job: jobFullName })
-        );
+
+        if (!instanceId) {
+          instanceId = await configManager.getActiveInstanceId();
+        }
+
+        if (!instanceId) {
+          vscode.window.showInformationMessage(t('No active Jenkins controller selected.'));
+          return;
+        }
+
+        const uri = buildPipelineScriptUri(instanceId, jobFullName);
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        try {
+          await vscode.languages.setTextDocumentLanguage(doc, 'groovy');
+        } catch {
+          // ignore
+        }
       }
     )
   );
@@ -314,10 +399,18 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'atJenkins.openBuildLog',
-      async (target?: JenkinsBuildTreeItem | { jobFullName: string; buildNumber: number }) => {
-        let info: { jobFullName: string; buildNumber: number } | undefined;
+      async (
+        target?:
+          | JenkinsBuildTreeItem
+          | { instanceId?: string; jobFullName: string; buildNumber: number }
+      ) => {
+        let info: { instanceId?: string; jobFullName: string; buildNumber: number } | undefined;
         if (target instanceof JenkinsBuildTreeItem) {
-          info = { jobFullName: target.jobFullName, buildNumber: target.build.number };
+          info = {
+            instanceId: target.instanceId,
+            jobFullName: target.jobFullName,
+            buildNumber: target.build.number
+          };
         } else if (
           target &&
           typeof target === 'object' &&
@@ -326,15 +419,78 @@ export function activate(context: vscode.ExtensionContext): void {
         ) {
           info = target;
         }
+
         if (!info) {
           return;
         }
-        vscode.window.showInformationMessage(
-          t('Open Build Log for "{job} #{build}"', {
-            job: info.jobFullName,
-            build: info.buildNumber
-          })
+
+        let instanceId = info.instanceId;
+        if (!instanceId) {
+          instanceId = await configManager.getActiveInstanceId();
+        }
+
+        if (!instanceId) {
+          vscode.window.showInformationMessage(t('No active Jenkins controller selected.'));
+          return;
+        }
+
+        const uri = buildBuildLogUri(instanceId, info.jobFullName, info.buildNumber);
+        const doc = await vscode.workspace.openTextDocument(uri);
+        await vscode.window.showTextDocument(doc, { preview: false });
+        try {
+          await vscode.languages.setTextDocumentLanguage(doc, 'Log');
+        } catch {
+          // ignore
+        }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.followBuildLogInOutput',
+      async (
+        target?:
+          | JenkinsBuildTreeItem
+          | { instanceId?: string; jobFullName: string; buildNumber: number }
+      ) => {
+        let info: { instanceId?: string; jobFullName: string; buildNumber: number } | undefined;
+        if (target instanceof JenkinsBuildTreeItem) {
+          info = {
+            instanceId: target.instanceId,
+            jobFullName: target.jobFullName,
+            buildNumber: target.build.number
+          };
+        } else if (
+          target &&
+          typeof target === 'object' &&
+          'jobFullName' in target &&
+          'buildNumber' in target
+        ) {
+          info = target;
+        }
+
+        if (!info) {
+          return;
+        }
+
+        let instanceId = info.instanceId;
+        if (!instanceId) {
+          instanceId = await configManager.getActiveInstanceId();
+        }
+
+        if (!instanceId) {
+          vscode.window.showInformationMessage(t('No active Jenkins controller selected.'));
+          return;
+        }
+
+        const disposable = await buildLogProvider.followBuildLogInOutput(
+          instanceId,
+          info.jobFullName,
+          info.buildNumber,
+          outputChannel
         );
+        context.subscriptions.push(disposable);
       }
     )
   );

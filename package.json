@@ -105,6 +105,11 @@
         "command": "atJenkins.stopBuild",
         "title": "%atJenkins.command.stopBuild.title%",
         "icon": "$(debug-stop)"
+      },
+      {
+        "command": "atJenkins.followBuildLogInOutput",
+        "title": "%atJenkins.command.followBuildLogInOutput.title%",
+        "icon": "$(terminal)"
       }
     ],
     "menus": {
@@ -143,6 +148,10 @@
         },
         {
           "command": "atJenkins.stopBuild",
+          "when": "false"
+        },
+        {
+          "command": "atJenkins.followBuildLogInOutput",
           "when": "false"
         }
       ],
@@ -208,6 +217,11 @@
           "command": "atJenkins.stopBuild",
           "when": "view == atJenkins.jobs && viewItem == jenkinsBuild.building",
           "group": "inline@2"
+        },
+        {
+          "command": "atJenkins.followBuildLogInOutput",
+          "when": "view == atJenkins.jobs && (viewItem == jenkinsBuild || viewItem =~ /^jenkinsBuild\\./)",
+          "group": "atJenkins.action@1"
         }
       ]
     },

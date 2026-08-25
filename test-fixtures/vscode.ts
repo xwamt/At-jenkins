@@ -18,6 +18,27 @@ export class TreeItem {
   }
 }
 
+export class Disposable {
+  private isDisposed = false;
+
+  constructor(private readonly callOnDispose: () => void) {}
+
+  static from(...disposables: { dispose(): void }[]): Disposable {
+    return new Disposable(() => {
+      for (const d of disposables) {
+        d.dispose();
+      }
+    });
+  }
+
+  dispose(): void {
+    if (!this.isDisposed) {
+      this.isDisposed = true;
+      this.callOnDispose();
+    }
+  }
+}
+
 export class EventEmitter<T> {
   private listeners: Array<(value: T) => void> = [];
 
@@ -66,6 +87,18 @@ export class Uri {
 
   static from(parts: { scheme: string; path: string; query?: string; authority?: string }): Uri {
     return new Uri(parts.path, parts.scheme, parts.path, parts.query ?? '', parts.authority ?? '');
+  }
+
+  static parse(value: string): Uri {
+    const match = value.match(/^([^:]+):(?:\/\/([^/]*))?(.*)$/);
+    if (!match) {
+      return new Uri(value, 'file', value, '', '');
+    }
+    const scheme = match[1] || 'file';
+    const authority = match[2] || '';
+    const remainder = match[3] || '';
+    const [path, query] = remainder.split('?');
+    return new Uri(path || '', scheme, path || '', query ?? '', authority);
   }
 
   /**
@@ -122,6 +155,7 @@ export interface TextDocument {
   fileName: string;
   languageId?: string;
   isDirty?: boolean;
+  getText?: (range?: unknown) => string;
 }
 
 export enum StatusBarAlignment {
@@ -480,11 +514,28 @@ export const workspace = {
   __clearContentProviders: (): void => {
     contentProviders.length = 0;
   },
-  openTextDocument: async (uri: Uri): Promise<TextDocument> => ({
-    uri,
-    fileName: uri.fsPath,
-    isDirty: false
-  }),
+  openTextDocument: async (uri: Uri): Promise<TextDocument> => {
+    let content = '';
+    const record = contentProviders.find((p) => p.scheme === uri.scheme && !p.disposed);
+    if (
+      record &&
+      typeof (record.provider as { provideTextDocumentContent?: (uri: Uri) => unknown })
+        .provideTextDocumentContent === 'function'
+    ) {
+      const res = await (
+        record.provider as { provideTextDocumentContent: (uri: Uri) => unknown }
+      ).provideTextDocumentContent(uri);
+      if (typeof res === 'string') {
+        content = res;
+      }
+    }
+    return {
+      uri,
+      fileName: uri.fsPath,
+      isDirty: false,
+      getText: () => content
+    };
+  },
   onDidSaveTextDocument: didSaveTextDocument.event,
   onDidCloseTextDocument: didCloseTextDocument.event,
   __fireDidSaveTextDocument: (document: TextDocument) => didSaveTextDocument.fire(document),

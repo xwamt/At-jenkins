@@ -68,8 +68,13 @@ describe('extension activation and commands', () => {
     expect(registered.has('atJenkins.loadMoreBuilds')).toBe(true);
     expect(registered.has('atJenkins.openPipelineScript')).toBe(true);
     expect(registered.has('atJenkins.openBuildLog')).toBe(true);
+    expect(registered.has('atJenkins.followBuildLogInOutput')).toBe(true);
     expect(registered.has('atJenkins.triggerBuild')).toBe(true);
     expect(registered.has('atJenkins.stopBuild')).toBe(true);
+
+    // Document content providers registered
+    const providers = (vscode.workspace as any).__getContentProviders();
+    expect(providers.some((p: any) => p.scheme === 'at-jenkins')).toBe(true);
   });
 
   it('executes setActiveInstance command', async () => {
@@ -125,6 +130,42 @@ describe('extension activation and commands', () => {
     expect(context.secretStore.has('atJenkins.secret.apiToken.inst-to-del')).toBe(false);
   });
 
+  it('executes openPipelineScript and openBuildLog with active instance', async () => {
+    activate(context);
+
+    context.globalStateStore.set('atJenkins.instances', [
+      {
+        id: 'inst-active',
+        label: 'Active Jenkins',
+        baseUrl: 'https://ci.example.com',
+        authMode: 'none',
+        verifyTls: true,
+        readOnly: false,
+        allowBackgroundAccess: false,
+        createdAt: 100,
+        updatedAt: 100
+      }
+    ]);
+    context.globalStateStore.set('atJenkins.activeInstanceId', 'inst-active');
+
+    let openedDoc: vscode.TextDocument | undefined;
+    (vscode.window as any).showTextDocument = async (doc: vscode.TextDocument) => {
+      openedDoc = doc;
+      return doc;
+    };
+
+    const openPipeline = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.openPipelineScript')!;
+    await openPipeline('backend/api');
+    expect(openedDoc?.uri.scheme).toBe('at-jenkins');
+    expect(openedDoc?.uri.path).toContain('inst-active');
+    expect(openedDoc?.uri.path).toContain('Jenkinsfile');
+
+    const openLog = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.openBuildLog')!;
+    await openLog({ jobFullName: 'backend/api', buildNumber: 42 });
+    expect(openedDoc?.uri.scheme).toBe('at-jenkins');
+    expect(openedDoc?.uri.path).toContain('42/consoleText');
+  });
+
   it('executes jobs tree commands safely', async () => {
     activate(context);
 
@@ -139,14 +180,6 @@ describe('extension activation and commands', () => {
 
     const loadMore = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.loadMoreBuilds')!;
     loadMore();
-
-    const openPipeline = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.openPipelineScript')!;
-    await openPipeline('backend/api');
-    expect(infoMsg).toContain('backend/api');
-
-    const openLog = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.openBuildLog')!;
-    await openLog({ jobFullName: 'backend/api', buildNumber: 42 });
-    expect(infoMsg).toContain('backend/api #42');
 
     const triggerBuild = (vscode.commands as any).__getRegisteredCommands().get('atJenkins.triggerBuild')!;
     await triggerBuild('backend/api');

@@ -86,5 +86,18 @@
   "Open Pipeline Script for \"{job}\"": "打开 \"{job}\" 的流水线脚本",
   "Open Build Log for \"{job} #{build}\"": "打开 \"{job} #{build}\" 的构建日志",
   "Trigger Build for \"{job}\"": "触发 \"{job}\" 的构建",
-  "Stop Build for \"{job} #{build}\"": "停止 \"{job} #{build}\" 的构建"
+  "Stop Build for \"{job} #{build}\"": "停止 \"{job} #{build}\" 的构建",
+  "Invalid Jenkins pipeline script URI.": "无效的 Jenkins 流水线脚本 URI。",
+  "Invalid Jenkins build log URI.": "无效的 Jenkins 构建日志 URI。",
+  "Invalid Jenkins document URI.": "无效的 Jenkins 文档 URI。",
+  "Cannot save pipeline script: controller \"{label}\" is read-only.": "无法保存流水线脚本：控制器 \"{label}\" 为只读。",
+  "Save changes to Jenkins pipeline script for \"{job}\" on controller \"{label}\"?": "确定要将流水线脚本的修改保存到控制器 \"{label}\" 上的任务 \"{job}\" 吗？",
+  "Save to Jenkins": "保存到 Jenkins",
+  "Cancel": "取消",
+  "Pipeline script saved for \"{job}\".": "任务 \"{job}\" 的流水线脚本已保存。",
+  "Failed to save pipeline script: {error}": "保存流水线脚本失败：{error}",
+  "Failed to load pipeline script for \"{job}\": {error}": "加载任务 \"{job}\" 的流水线脚本失败：{error}",
+  "Failed to load build log for \"{job} #{build}\": {error}": "加载任务 \"{job} #{build}\" 的构建日志失败：{error}",
+  "Follow Build Log in Output": "在输出通道中跟踪构建日志",
+  "No active Jenkins controller selected.": "未选择活动的 Jenkins 控制器。"
 }

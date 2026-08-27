@@ -51,7 +51,9 @@ describe('BuildLogDocumentProvider', () => {
       const content = await provider.provideTextDocumentContent(uri);
 
       expect(mockClientPool.get).toHaveBeenCalledWith('inst-1');
-      expect(mockClient.getBuildLog).toHaveBeenCalledWith('folder/build-job', 42);
+      expect(mockClient.getBuildLog).toHaveBeenCalledWith('folder/build-job', 42, {
+        tailBytes: 2 * 1024 * 1024
+      });
       expect(content).toContain('Finished: SUCCESS');
 
       // Fast forward time, no onDidChange events should fire for completed build
@@ -111,6 +113,23 @@ describe('BuildLogDocumentProvider', () => {
 
       expect(content).toContain('//');
       expect(mockClientPool.get).not.toHaveBeenCalled();
+    });
+
+    it('annotates truncated UI logs', async () => {
+      mockClient.getBuildLog.mockResolvedValue({
+        text: 'tail only',
+        truncated: true,
+        totalBytes: 10_000,
+        startByte: 9000,
+        endByte: 10_000,
+        hasMore: false
+      });
+      mockClient.getBuild.mockResolvedValue({ number: 1, building: false, result: 'SUCCESS' });
+
+      const uri = buildBuildLogUri('inst-1', 'big-job', 1);
+      const content = await provider.provideTextDocumentContent(uri);
+      expect(content).toContain('Log truncated');
+      expect(content).toContain('tail only');
     });
   });
 
@@ -178,20 +197,22 @@ describe('BuildLogDocumentProvider', () => {
           text: 'Chunk 1: starting build\n',
           truncated: false,
           totalBytes: 24,
-          start: 0,
-          end: 24
+          startByte: 0,
+          endByte: 24,
+          hasMore: false
         })
         .mockResolvedValueOnce({
           text: 'Chunk 2: compilation finished\n',
           truncated: false,
           totalBytes: 55,
-          start: 24,
-          end: 55
+          startByte: 24,
+          endByte: 55,
+          hasMore: false
         });
 
       mockClient.getBuild
-        .mockResolvedValueOnce({ number: 30, building: true, result: null }) // check 1
-        .mockResolvedValueOnce({ number: 30, building: false, result: 'SUCCESS' }); // check 2
+        .mockResolvedValueOnce({ number: 30, building: true, result: null }) // after first drain
+        .mockResolvedValueOnce({ number: 30, building: false, result: 'SUCCESS' }); // after poll
 
       const stream = await provider.followBuildLogInOutput(
         'inst-1',
@@ -202,12 +223,17 @@ describe('BuildLogDocumentProvider', () => {
       );
 
       expect(mockOutputChannel.show).toHaveBeenCalled();
-      expect(mockClient.getBuildLog).toHaveBeenCalledWith('pipeline-app', 30, { start: 0 });
+      expect(mockClient.getBuildLog).toHaveBeenCalledWith('pipeline-app', 30, {
+        start: 0,
+        maxBytes: 256 * 1024
+      });
       expect(writtenLines.join('')).toContain('Chunk 1: starting build');
 
-      // Tick 1
       await vi.advanceTimersByTimeAsync(500);
-      expect(mockClient.getBuildLog).toHaveBeenCalledWith('pipeline-app', 30, { start: 24 });
+      expect(mockClient.getBuildLog).toHaveBeenCalledWith('pipeline-app', 30, {
+        start: 24,
+        maxBytes: 256 * 1024
+      });
       expect(writtenLines.join('')).toContain('Chunk 2: compilation finished');
       expect(writtenLines.join('')).toContain('SUCCESS');
 
@@ -226,8 +252,9 @@ describe('BuildLogDocumentProvider', () => {
         text: 'Initial log\n',
         truncated: false,
         totalBytes: 12,
-        start: 0,
-        end: 12
+        startByte: 0,
+        endByte: 12,
+        hasMore: false
       });
       mockClient.getBuild.mockResolvedValue({ number: 31, building: true, result: null });
 

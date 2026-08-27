@@ -10,11 +10,19 @@ export class JenkinsInstanceTreeItem extends vscode.TreeItem {
   ) {
     super(instance.label, vscode.TreeItemCollapsibleState.None);
     this.id = `atJenkins.instance:${instance.id}`;
-    this.description = instance.baseUrl + (instance.readOnly ? ' [RO]' : '');
+    this.description = [
+      instance.baseUrl,
+      instance.readOnly ? '[RO]' : undefined,
+      instance.allowBackgroundAccess ? `[${t('Agent')}]` : undefined
+    ]
+      .filter(Boolean)
+      .join(' ');
     this.contextValue = isActive ? 'atJenkins.instance.active' : 'atJenkins.instance.inactive';
     this.iconPath = isActive
       ? new vscode.ThemeIcon('radio-tower', new vscode.ThemeColor('charts.green'))
-      : new vscode.ThemeIcon('server');
+      : instance.allowBackgroundAccess
+        ? new vscode.ThemeIcon('server-process')
+        : new vscode.ThemeIcon('server');
     this.tooltip = buildTooltip(instance, isActive);
     this.command = {
       command: 'atJenkins.setActiveInstance',

@@ -210,15 +210,26 @@ export class JenkinsHttpClient {
         headers['content-length'] = payload.buffer.length.toString();
       }
 
+      // D15: verifyTls true → system CA only. TOFU only when verifyTls is false.
+      // Presence of certVerifier must never override verifyTls=true.
       const certVerifier = this.options.certVerifier;
-      const usesCertVerifier = isHttps && Boolean(certVerifier);
+      const usesCertVerifier = isHttps && this.options.verifyTls === false && Boolean(certVerifier);
+
+      if (isHttps && this.options.verifyTls === false && !certVerifier) {
+        settleReject(
+          new TlsError(
+            'verifyTls is disabled but no certificate verifier was configured; refusing to connect without TOFU.',
+            { host: target.hostname, port: portOf(target) }
+          )
+        );
+        return;
+      }
 
       let rejectUnauthorized: boolean | undefined;
       if (usesCertVerifier) {
         rejectUnauthorized = false;
-      } else if (this.options.verifyTls === false) {
-        rejectUnauthorized = false;
       } else {
+        // verifyTls true (or http): leave undefined so Node uses default CA verification
         rejectUnauthorized = undefined;
       }
 
@@ -420,8 +431,54 @@ function portOf(target: URL): number {
 }
 
 function describeFailure(status: number, text: string, path: string): string {
-  if (text.trim().length > 0) {
-    return `Jenkins request to ${path} failed with HTTP ${status}: ${text.slice(0, 200)}`;
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    return `Jenkins request to ${path} failed with HTTP ${status}.`;
   }
-  return `Jenkins request to ${path} failed with HTTP ${status}.`;
+  const excerpt = extractJenkinsErrorExcerpt(trimmed) ?? trimmed.slice(0, 200);
+  return `Jenkins request to ${path} failed with HTTP ${status}: ${excerpt}`;
+}
+
+/** Prefer exception / pre text from Stapler HTML error pages over raw DOCTYPE soup. */
+function extractJenkinsErrorExcerpt(text: string): string | undefined {
+  if (!text.includes('<') || text.length < 80) {
+    return undefined;
+  }
+  const pre = /<pre[^>]*>([\s\S]*?)<\/pre>/i.exec(text);
+  if (pre?.[1]) {
+    return decodeBasicHtml(pre[1]).trim().slice(0, 500);
+  }
+  // Stapler often embeds the stack in an HTML comment or plain text body.
+  const java = /(java\.[a-zA-Z0-9_.$]+(?::[^\n<]+)?(?:\n\s*at [^\n<]+){0,3})/.exec(text);
+  if (java?.[1]) {
+    return java[1].replace(/\s+/g, ' ').trim().slice(0, 500);
+  }
+  const caused = /Caused by:\s*([^\n<]+)/i.exec(text);
+  if (caused?.[1]) {
+    return `Caused by: ${caused[1].trim()}`.slice(0, 500);
+  }
+  const title = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(text);
+  if (title?.[1]) {
+    const t = decodeBasicHtml(title[1]).trim();
+    if (t && !/^error$/i.test(t)) {
+      return t.slice(0, 200);
+    }
+  }
+  const h1 = /<h1[^>]*>([\s\S]*?)<\/h1>/i.exec(text);
+  if (h1?.[1]) {
+    return decodeBasicHtml(h1[1]).trim().slice(0, 200);
+  }
+  return undefined;
+}
+
+function decodeBasicHtml(value: string): string {
+  return value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ');
 }

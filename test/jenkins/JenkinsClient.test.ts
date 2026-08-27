@@ -465,7 +465,7 @@ describe('JenkinsClient API operations', () => {
         }
         if (req.method === 'POST') {
           expect(req.path).toBe('/job/my-pipeline/config.xml');
-          expect(req.headers?.['content-type']).toBe('application/xml');
+          expect(req.headers?.['content-type']).toBe('text/xml; charset=UTF-8');
           savedXml = String(req.body);
           return { status: 200, text: '' };
         }
@@ -477,9 +477,62 @@ describe('JenkinsClient API operations', () => {
       const newScript = `pipeline {\n  agent any\n  stages {\n    stage('New') { echo "1 < 2 & 3 > 0" }\n  }\n}`;
       await client.updatePipelineScript('my-pipeline', newScript);
 
-      expect(savedXml).toContain('<script>');
-      expect(savedXml).toContain('&lt; 2 &amp; 3 &gt;');
+      expect(savedXml).toContain('<script><![CDATA[');
+      expect(savedXml).toContain('1 < 2 & 3 > 0');
+      expect(savedXml).toContain(']]></script>');
       expect(savedXml).toContain('org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition');
+    });
+
+    it('updatePipelineScript preserves Groovy $1 / $env / $class in script (no String.replace $-patterns)', async () => {
+      let savedXml = '';
+      const httpClient = createMockHttpClient(async (req) => {
+        if (req.method === 'GET') {
+          return { text: cpsConfigXml };
+        }
+        if (req.method === 'POST') {
+          savedXml = String(req.body);
+          return { status: 200, text: '' };
+        }
+        throw new Error(`Unexpected ${req.method}`);
+      });
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+
+      // These $-patterns are special in String.prototype.replace replacement strings and
+      // must survive round-trip into config.xml or Jenkins returns HTTP 500 on parse.
+      const newScript =
+        "echo \"$1 and $& and ${env.BUILD_NUMBER}\"\n[$class: 'Foo']";
+
+      await client.updatePipelineScript('my-pipeline', newScript);
+
+      expect(savedXml).toContain('<![CDATA[');
+      expect(savedXml).toContain('$1');
+      expect(savedXml).toContain('$&');
+      expect(savedXml).toContain('${env.BUILD_NUMBER}');
+      expect(savedXml).toContain("$class: 'Foo'");
+      expect(savedXml).toContain('<sandbox>true</sandbox>');
+    });
+
+    it('updatePipelineScript escapes CDATA terminators inside Groovy scripts', async () => {
+      let savedXml = '';
+      const httpClient = createMockHttpClient(async (req) => {
+        if (req.method === 'GET') {
+          return { text: cpsConfigXml };
+        }
+        if (req.method === 'POST') {
+          savedXml = String(req.body);
+          return { status: 200, text: '' };
+        }
+        throw new Error(`Unexpected ${req.method}`);
+      });
+      const client = new JenkinsClient({
+        httpClient,
+        authenticator: new JenkinsAuthenticator({ authMode: 'none' })
+      });
+
+      await client.updatePipelineScript('my-pipeline', 'echo "]]>"');
+      expect(savedXml).toContain(']]]]><![CDATA[>');
+      expect(savedXml).toContain('<![CDATA[');
     });
 
     it('updatePipelineScript throws ReadOnly when instance is configured readOnly', async () => {
@@ -588,6 +641,20 @@ describe('JenkinsClient API operations', () => {
       expect(log.truncated).toBe(true);
       expect(log.text.length).toBe(15);
       expect(log.totalBytes).toBe(Buffer.byteLength(logContent));
+    });
+
+    it('maps HTTP 401 on consoleText to AuthError', async () => {
+      const httpClient = createMockHttpClient(async () => ({ status: 401, text: 'login form' }));
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+      await expect(client.getBuildLog('demo', 10)).rejects.toBeInstanceOf(AuthError);
+    });
+
+    it('maps HTTP 404 on consoleText to NotFound', async () => {
+      const httpClient = createMockHttpClient(async () => ({ status: 404, text: 'not found' }));
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+      await expect(client.getBuildLog('demo', 99)).rejects.toBeInstanceOf(NotFound);
     });
   });
 

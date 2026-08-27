@@ -479,6 +479,10 @@ export class FileSystemError extends Error {
   }
 }
 
+export enum FilePermission {
+  Readonly = 1
+}
+
 export interface RecordedFileSystemProvider {
   scheme: string;
   provider: unknown;

@@ -300,7 +300,7 @@ async function probeWithFormValues(
   const httpClient = new JenkinsHttpClient({
     baseUrl,
     verifyTls: payload.verifyTls,
-    certVerifier: options.certVerifier,
+    certVerifier: payload.verifyTls ? undefined : options.certVerifier,
     log
   });
 
@@ -362,7 +362,12 @@ export function renderInstanceForm(options: RenderInstanceFormOptions = {}): Ins
           <input name="username" value="${escapeAttr(existing?.username ?? '')}" autocomplete="off">
         </label>
         <label class="field-stack auth-api-token-field">${escapeAttr(t('API Token'))}
-          <input name="apiToken" type="password" autocomplete="new-password">
+          <div class="input-with-toggle">
+            <input name="apiToken" type="password" autocomplete="new-password">
+            <button type="button" class="password-toggle-btn" aria-label="${escapeAttr(t('Toggle password visibility'))}" title="${escapeAttr(t('Show/Hide'))}">
+              <span class="toggle-icon">👁</span>
+            </button>
+          </div>
           <span class="field-help">${escapeAttr(
             hasStoredApiToken
               ? t('Leave blank to keep the saved API token.')
@@ -370,7 +375,12 @@ export function renderInstanceForm(options: RenderInstanceFormOptions = {}): Ins
           )}</span>
         </label>
         <label class="field-stack auth-password-field">${escapeAttr(t('Password'))}
-          <input name="password" type="password" autocomplete="new-password">
+          <div class="input-with-toggle">
+            <input name="password" type="password" autocomplete="new-password">
+            <button type="button" class="password-toggle-btn" aria-label="${escapeAttr(t('Toggle password visibility'))}" title="${escapeAttr(t('Show/Hide'))}">
+              <span class="toggle-icon">👁</span>
+            </button>
+          </div>
           <span class="field-help">${escapeAttr(
             hasStoredPassword
               ? t('Leave blank to keep the saved password.')
@@ -381,28 +391,37 @@ export function renderInstanceForm(options: RenderInstanceFormOptions = {}): Ins
     </div>
     <div class="form-panel">
       <div class="toggle-grid">
-        <label class="toggle-row" for="verifyTls">
+        <label class="toggle-row switch-row" for="verifyTls">
           <span class="toggle-copy">
             <span class="toggle-title">${escapeAttr(t('Verify TLS certificate'))}</span>
             <span class="field-help">${escapeAttr(t('Validates controller TLS certificate with TOFU trust support.'))}</span>
           </span>
-          <input id="verifyTls" name="verifyTls" type="checkbox"${verifyTlsChecked ? ' checked' : ''}>
+          <span class="switch-wrapper">
+            <input id="verifyTls" name="verifyTls" type="checkbox"${verifyTlsChecked ? ' checked' : ''}>
+            <span class="switch-slider" aria-hidden="true"></span>
+          </span>
         </label>
-        <label class="toggle-row" for="readOnly">
+        <label class="toggle-row switch-row" for="readOnly">
           <span class="toggle-copy">
             <span class="toggle-title">${escapeAttr(t('Read-only controller'))}</span>
             <span class="field-help">${escapeAttr(t('Blocks triggering builds, stopping builds, and modifying pipeline scripts.'))}</span>
           </span>
-          <input id="readOnly" name="readOnly" type="checkbox"${existing?.readOnly ? ' checked' : ''}>
+          <span class="switch-wrapper">
+            <input id="readOnly" name="readOnly" type="checkbox"${existing?.readOnly ? ' checked' : ''}>
+            <span class="switch-slider" aria-hidden="true"></span>
+          </span>
         </label>
-        <label class="toggle-row" for="allowBackgroundAccess">
+        <label class="toggle-row switch-row" for="allowBackgroundAccess">
           <span class="toggle-copy">
             <span class="toggle-title">${escapeAttr(t('Allow Agent background access'))}</span>
             <span class="field-help">${escapeAttr(t('Lets Agents query jobs and logs over MCP even when no panel is open.'))}</span>
           </span>
-          <input id="allowBackgroundAccess" name="allowBackgroundAccess" type="checkbox"${
+          <span class="switch-wrapper">
+            <input id="allowBackgroundAccess" name="allowBackgroundAccess" type="checkbox"${
             existing?.allowBackgroundAccess ? ' checked' : ''
           }>
+            <span class="switch-slider" aria-hidden="true"></span>
+          </span>
         </label>
       </div>
     </div>

@@ -9,7 +9,9 @@ import { JenkinsClient } from '../../src/jenkins/JenkinsClient';
 import { JenkinsClientPool } from '../../src/jenkins/JenkinsClientPool';
 import type { BuildSummary, JobSummary } from '../../src/jenkins/types';
 import {
+  calculateWeatherScore,
   formatDuration,
+  formatJobTypeBadge,
   formatTimestamp,
   getBuildIcon,
   getJobIcon,
@@ -453,6 +455,43 @@ describe('JobsTreeProvider', () => {
       ).toBe('jenkinsJob');
     });
 
+    it('formatJobTypeBadge returns correct badge tag based on job class', () => {
+      expect(
+        formatJobTypeBadge({
+          name: 'p1',
+          fullName: 'p1',
+          url: '',
+          _class: 'org.jenkinsci.plugins.workflow.job.WorkflowJob'
+        })
+      ).toBe('[Pipeline]');
+
+      expect(
+        formatJobTypeBadge({
+          name: 'f1',
+          fullName: 'f1',
+          url: '',
+          _class: 'hudson.model.FreeStyleProject'
+        })
+      ).toBe('[Freestyle]');
+
+      expect(
+        formatJobTypeBadge({
+          name: 'mb1',
+          fullName: 'mb1',
+          url: '',
+          isMultibranch: true
+        })
+      ).toBe('[Multibranch]');
+
+      expect(
+        formatJobTypeBadge({
+          name: 'other',
+          fullName: 'other',
+          url: ''
+        })
+      ).toBeUndefined();
+    });
+
     it('getJobIcon maps job color to ThemeIcon', () => {
       expect(getJobIcon('blue').id).toBe('pass-filled');
       expect(getJobIcon('red').id).toBe('error');
@@ -518,6 +557,57 @@ describe('JobsTreeProvider', () => {
           duration: 0
         }).id
       ).toBe('circle-outline');
+    });
+
+    it('calculateWeatherScore computes weather icon and stability based on recent builds', () => {
+      // 100% success -> ☀️
+      const allSuccess: BuildSummary[] = Array.from({ length: 5 }, (_, i) => ({
+        number: i + 1,
+        url: '',
+        result: 'SUCCESS',
+        building: false,
+        timestamp: 0,
+        duration: 1000
+      }));
+      const weather1 = calculateWeatherScore(allSuccess);
+      expect(weather1?.icon).toBe('☀️');
+      expect(weather1?.score).toBe(100);
+
+      // 80% success -> ⛅
+      const fourOfFive: BuildSummary[] = [
+        ...allSuccess.slice(0, 4),
+        { number: 5, url: '', result: 'FAILURE', building: false, timestamp: 0, duration: 1000 }
+      ];
+      const weather2 = calculateWeatherScore(fourOfFive);
+      expect(weather2?.icon).toBe('⛅');
+      expect(weather2?.score).toBe(80);
+
+      // 40% success -> 🌧️
+      const twoOfFive: BuildSummary[] = [
+        ...allSuccess.slice(0, 2),
+        { number: 3, url: '', result: 'FAILURE', building: false, timestamp: 0, duration: 1000 },
+        { number: 4, url: '', result: 'FAILURE', building: false, timestamp: 0, duration: 1000 },
+        { number: 5, url: '', result: 'FAILURE', building: false, timestamp: 0, duration: 1000 }
+      ];
+      const weather3 = calculateWeatherScore(twoOfFive);
+      expect(weather3?.icon).toBe('🌧️');
+      expect(weather3?.score).toBe(40);
+
+      // 0% success -> ⛈️
+      const allFailure: BuildSummary[] = Array.from({ length: 5 }, (_, i) => ({
+        number: i + 1,
+        url: '',
+        result: 'FAILURE',
+        building: false,
+        timestamp: 0,
+        duration: 1000
+      }));
+      const weather4 = calculateWeatherScore(allFailure);
+      expect(weather4?.icon).toBe('⛈️');
+      expect(weather4?.score).toBe(0);
+
+      // Empty builds -> undefined
+      expect(calculateWeatherScore([])).toBeUndefined();
     });
 
     it('formatDuration formats milliseconds into human-readable strings', () => {

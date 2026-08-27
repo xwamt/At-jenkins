@@ -13,6 +13,7 @@
   "atJenkins.command.refreshJobs.title": "刷新任务",
   "atJenkins.command.loadMoreBuilds.title": "加载更多构建",
   "atJenkins.command.openPipelineScript.title": "打开流水线脚本",
+  "atJenkins.command.openJobSummary.title": "打开任务摘要",
   "atJenkins.command.openBuildLog.title": "打开构建日志",
   "atJenkins.command.triggerBuild.title": "触发构建",
   "atJenkins.command.stopBuild.title": "停止构建",

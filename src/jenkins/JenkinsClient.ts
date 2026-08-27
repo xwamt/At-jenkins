@@ -245,13 +245,16 @@ export class JenkinsClient {
 
     const xml = res.text;
 
+    // Check SCM before CpsFlowDefinition — "CpsScmFlowDefinition" contains the
+    // substring "CpsFlowDefinition" and must not be treated as controller-stored.
+    if (xml.includes('CpsScmFlowDefinition')) {
+      throw new Unsupported(
+        `Job '${fullName}' uses SCM-stored pipeline script (CpsScmFlowDefinition). Only controller-stored Pipeline jobs support pipeline script viewing and editing.`,
+        { jobType: 'CpsScmFlowDefinition', operation: 'getPipelineScript' }
+      );
+    }
+
     if (!isCpsFlowDefinitionXml(xml)) {
-      if (xml.includes('CpsScmFlowDefinition')) {
-        throw new Unsupported(
-          `Job '${fullName}' uses SCM-stored pipeline script (CpsScmFlowDefinition). Only controller-stored Pipeline jobs support pipeline script viewing and editing.`,
-          { jobType: 'CpsScmFlowDefinition', operation: 'getPipelineScript' }
-        );
-      }
       if (xml.includes('<project>') || xml.includes('<matrix-project>') || xml.includes('<maven2-moduleset>')) {
         throw new Unsupported(
           `Job '${fullName}' is a Freestyle or non-Pipeline project. Only controller-stored Pipeline jobs support pipeline script viewing and editing.`,
@@ -299,7 +302,7 @@ export class JenkinsClient {
 
     const xml = res.text;
 
-    if (!isCpsFlowDefinitionXml(xml)) {
+    if (xml.includes('CpsScmFlowDefinition') || !isCpsFlowDefinitionXml(xml)) {
       throw new Unsupported(
         `Job '${fullName}' is not a controller-stored Pipeline job.`,
         { operation: 'updatePipelineScript' }
@@ -313,7 +316,9 @@ export class JenkinsClient {
         method: 'POST',
         path,
         headers: {
-          'content-type': 'application/xml',
+          // charset matters: without it some Jenkins/Stapler stacks mis-decode UTF-8
+          // pipeline text and fail XStream parse with HTTP 500 HTML.
+          'content-type': 'text/xml; charset=UTF-8',
           ...headers
         },
         body: updatedXml
@@ -375,8 +380,10 @@ export class JenkinsClient {
     const jobPath = buildJobPath(fullName);
     const path = `${jobPath}/${buildNumber}/consoleText`;
 
+    // Use request() (not requestRaw) so 401/404 map to AuthError/NotFound and
+    // password+crumb auth retry can observe AuthError.
     const res = await this.authenticator.withAuthRetry(async (headers) => {
-      return this.httpClient.requestRaw({
+      return this.httpClient.request({
         method: 'GET',
         path,
         headers
@@ -449,7 +456,9 @@ export class JenkinsClient {
 }
 
 function isCpsFlowDefinitionXml(xml: string): boolean {
-  return xml.includes('org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition') || xml.includes('CpsFlowDefinition');
+  // Prefer FQCN. Do not match bare "CpsFlowDefinition" alone — that substring
+  // also appears inside CpsScmFlowDefinition (handled before this check).
+  return xml.includes('org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition');
 }
 
 function extractScriptFromXml(xml: string): string {
@@ -471,8 +480,20 @@ function extractSandboxFromXml(xml: string): boolean {
 }
 
 function replaceScriptInXml(xml: string, newScript: string): string {
-  const escaped = escapeXml(newScript);
-  return xml.replace(/<script>[\s\S]*?<\/script>/, `<script>${escaped}</script>`);
+  // Prefer CDATA so Groovy `$1` / `${env…}` / `$class` / raw `<` stay intact without
+  // entity-escaping pitfalls. Use a replacer function so String.replace does not
+  // treat `$&` / `$1` in the script as substitution patterns (that corruption
+  // yields invalid XML and Jenkins HTTP 500).
+  const cdataSafe = newScript.replaceAll(']]>', ']]]]><![CDATA[>');
+  const replacement = `<script><![CDATA[${cdataSafe}]]></script>`;
+  const scriptTag = /<script(?:\s[^>]*)?>[\s\S]*?<\/script>/;
+  if (!scriptTag.test(xml)) {
+    throw new Unsupported(
+      'config.xml does not contain a <script> element to update.',
+      { operation: 'updatePipelineScript' }
+    );
+  }
+  return xml.replace(scriptTag, () => replacement);
 }
 
 function escapeXml(unsafe: string): string {

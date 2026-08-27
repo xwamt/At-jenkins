@@ -5,6 +5,8 @@ import { Unsupported } from '../jenkins/errors';
 import type { JenkinsClientPool } from '../jenkins/JenkinsClientPool';
 import { formatError } from '../utils/errors';
 import { asRedactedLog, noopLog, type AtJenkinsLog } from '../utils/logger';
+import { JENKINS_DRAFT_SCHEME, parsePipelineDraftUri } from './draftUri';
+import type { JenkinsPipelineDraftFileSystemProvider } from './JenkinsPipelineDraftFileSystemProvider';
 import {
   buildPipelineScriptUri,
   JENKINS_DOCUMENT_SCHEME,
@@ -13,6 +15,7 @@ import {
 
 export interface PipelineScriptDocumentProviderOptions {
   log?: AtJenkinsLog;
+  draftProvider?: JenkinsPipelineDraftFileSystemProvider;
 }
 
 export class PipelineScriptDocumentProvider
@@ -22,6 +25,7 @@ export class PipelineScriptDocumentProvider
   readonly onDidChange: vscode.Event<vscode.Uri> = this.onDidChangeEmitter.event;
 
   private readonly log: AtJenkinsLog;
+  private readonly draftProvider?: JenkinsPipelineDraftFileSystemProvider;
 
   constructor(
     private readonly clientPool: JenkinsClientPool,
@@ -29,10 +33,11 @@ export class PipelineScriptDocumentProvider
     options?: PipelineScriptDocumentProviderOptions
   ) {
     this.log = asRedactedLog(options?.log ?? noopLog);
+    this.draftProvider = options?.draftProvider;
   }
 
   /**
-   * Loads the pipeline script for a controller-stored pipeline job.
+   * Read-only fallback content (Unsupported / error). Editable scripts use the draft FS.
    */
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const target = parseJenkinsDocumentUri(uri);
@@ -59,16 +64,42 @@ export class PipelineScriptDocumentProvider
   }
 
   /**
-   * Handles saving a pipeline script virtual document back to Jenkins.
-   * Checks read-only status and confirms before updating.
+   * Handles saving a pipeline script draft back to Jenkins (confirm + readOnly + writability).
    */
   async savePipelineScript(document: vscode.TextDocument): Promise<boolean> {
-    if (document.uri.scheme !== JENKINS_DOCUMENT_SCHEME) {
+    const isDraft = document.uri.scheme === JENKINS_DRAFT_SCHEME;
+    const isContent = document.uri.scheme === JENKINS_DOCUMENT_SCHEME;
+    if (!isDraft && !isContent) {
       return false;
     }
 
-    const target = parseJenkinsDocumentUri(document.uri);
-    if (!target || target.type !== 'script') {
+    const draftTarget = isDraft ? parsePipelineDraftUri(document.uri) : undefined;
+    const contentTarget =
+      isContent && !draftTarget ? parseJenkinsDocumentUri(document.uri) : undefined;
+    const target =
+      draftTarget ??
+      (contentTarget?.type === 'script'
+        ? { instanceId: contentTarget.instanceId, jobFullName: contentTarget.jobFullName }
+        : undefined);
+
+    if (!target) {
+      return false;
+    }
+
+    if (isDraft && this.draftProvider) {
+      const draft = this.draftProvider.getDraft(document.uri);
+      if (draft && !draft.writable) {
+        vscode.window.showErrorMessage(
+          t('Cannot save: this pipeline script is read-only (SCM-backed or non-editable).')
+        );
+        return false;
+      }
+    }
+
+    if (isContent) {
+      vscode.window.showErrorMessage(
+        t('Cannot save: open a controller-stored Pipeline job as an editable draft first.')
+      );
       return false;
     }
 
@@ -77,7 +108,12 @@ export class PipelineScriptDocumentProvider
       const instance =
         client.config ?? (await this.configManager?.getInstance(target.instanceId));
 
-      if (instance?.readOnly) {
+      if (!instance) {
+        vscode.window.showErrorMessage(t('Jenkins controller not found.'));
+        return false;
+      }
+
+      if (instance.readOnly) {
         vscode.window.showErrorMessage(
           t('Cannot save pipeline script: controller "{label}" is read-only.', {
             label: instance.label || target.instanceId
@@ -86,10 +122,21 @@ export class PipelineScriptDocumentProvider
         return false;
       }
 
+      // Refuse before confirm when Jenkins would reject (SCM / Freestyle).
+      try {
+        await client.getPipelineScript(target.jobFullName);
+      } catch (error) {
+        if (error instanceof Unsupported) {
+          vscode.window.showErrorMessage(error.message);
+          return false;
+        }
+        throw error;
+      }
+
       const confirm = await vscode.window.showWarningMessage(
         t('Save changes to Jenkins pipeline script for "{job}" on controller "{label}"?', {
           job: target.jobFullName,
-          label: instance?.label || target.instanceId
+          label: instance.label || target.instanceId
         }),
         { modal: true },
         t('Save to Jenkins'),
@@ -102,6 +149,7 @@ export class PipelineScriptDocumentProvider
 
       const content = typeof document.getText === 'function' ? document.getText() : '';
       await client.updatePipelineScript(target.jobFullName, content);
+      this.draftProvider?.markClean(document.uri, content);
 
       vscode.window.showInformationMessage(
         t('Pipeline script saved for "{job}".', {
@@ -113,6 +161,10 @@ export class PipelineScriptDocumentProvider
       this.log.error(
         `Failed to save pipeline script for ${target.instanceId}/${target.jobFullName}: ${formatError(error)}`
       );
+      // Log a longer diagnostic line for Stapler HTML 500 bodies (Output: AT Jenkins).
+      if (error instanceof Error && error.message.includes('HTTP 500')) {
+        this.log.error(`Save diagnostic (HTTP 500 detail): ${error.message.slice(0, 1500)}`);
+      }
       vscode.window.showErrorMessage(
         t('Failed to save pipeline script: {error}', {
           error: formatError(error)
@@ -122,9 +174,6 @@ export class PipelineScriptDocumentProvider
     }
   }
 
-  /**
-   * Refreshes the given pipeline script document.
-   */
   refresh(instanceId: string, jobFullName: string): void {
     this.onDidChangeEmitter.fire(buildPipelineScriptUri(instanceId, jobFullName));
   }

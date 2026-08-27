@@ -13,6 +13,7 @@
   "atJenkins.command.refreshJobs.title": "Refresh Jobs",
   "atJenkins.command.loadMoreBuilds.title": "Load More Builds",
   "atJenkins.command.openPipelineScript.title": "Open Pipeline Script",
+  "atJenkins.command.openJobSummary.title": "Open Job Summary",
   "atJenkins.command.openBuildLog.title": "Open Build Log",
   "atJenkins.command.triggerBuild.title": "Trigger Build",
   "atJenkins.command.stopBuild.title": "Stop Build",

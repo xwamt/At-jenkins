@@ -84,7 +84,8 @@ export class JenkinsClientPool {
     const httpClient = new JenkinsHttpClient({
       baseUrl: instance.baseUrl,
       verifyTls: instance.verifyTls,
-      certVerifier: this.options?.certVerifier,
+      // Only attach TOFU verifier when system CA verification is off (D15).
+      certVerifier: instance.verifyTls ? undefined : this.options?.certVerifier,
       log: this.log
     });
 

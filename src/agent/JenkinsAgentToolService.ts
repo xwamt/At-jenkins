@@ -1,7 +1,7 @@
 import type { z } from 'zod';
 import type { JenkinsInstanceConfigManager } from '../config/JenkinsInstanceConfigManager';
 import type { JenkinsInstanceConfig } from '../config/schema';
-import { DeniedBackground, NotFound, Unsupported, isJenkinsError } from '../jenkins/errors';
+import { DeniedBackground, NotFound, Unsupported, AuthError, TlsError } from '../jenkins/errors';
 import type { JenkinsClient } from '../jenkins/JenkinsClient';
 import type { JenkinsClientPool } from '../jenkins/JenkinsClientPool';
 import { DEFAULT_LOG_TAIL_BYTES } from '../jenkins/types';
@@ -124,6 +124,17 @@ export class JenkinsAgentToolService {
           message: error.message
         };
       }
+      if (
+        error instanceof Unsupported ||
+        error instanceof AuthError ||
+        error instanceof TlsError
+      ) {
+        return {
+          ok: false,
+          code: 'UNAVAILABLE',
+          message: error.message
+        };
+      }
       const message = formatError(error);
       this.log?.error(`Tool invocation failed: ${message}`);
       return {
@@ -183,7 +194,7 @@ export class JenkinsAgentToolService {
     const job = await client.getJob(input.jobFullName);
     return {
       ok: true,
-      result: job
+      result: scrubJobSecrets(job)
     };
   }
 
@@ -219,14 +230,36 @@ export class JenkinsAgentToolService {
 
   private async getBuildLog(input: JenkinsGetBuildLogInput): Promise<ToolInvokeResult> {
     const { client } = await this.requireBackgroundAccess(input.instanceId);
-    const tailBytes = input.tailBytes ?? (input.start === undefined ? DEFAULT_LOG_TAIL_BYTES : undefined);
+    const cappedTail = Math.min(input.tailBytes ?? DEFAULT_LOG_TAIL_BYTES, MAX_MCP_LOG_TAIL_BYTES);
     const logResult = await client.getBuildLog(input.jobFullName, input.buildNumber, {
       start: input.start,
-      tailBytes
+      tailBytes: cappedTail
     });
     return {
       ok: true,
       result: logResult
     };
   }
+}
+
+/** Hard cap for MCP log responses (agent context / memory). */
+export const MAX_MCP_LOG_TAIL_BYTES = 256 * 1024;
+
+function scrubJobSecrets<T extends { parameters?: Array<{ type?: string; defaultValue?: unknown }> }>(
+  job: T
+): T {
+  if (!job.parameters?.length) {
+    return job;
+  }
+  return {
+    ...job,
+    parameters: job.parameters.map((p) => {
+      const type = (p.type ?? '').toLowerCase();
+      if (type.includes('password') || type.includes('credential')) {
+        const { defaultValue: _omit, ...rest } = p;
+        return { ...rest, defaultValue: undefined };
+      }
+      return p;
+    })
+  };
 }

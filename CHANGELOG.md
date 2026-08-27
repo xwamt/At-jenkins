@@ -27,11 +27,11 @@ AT Jenkins 是一款面向 VS Code 与 Cursor 的专业级 Jenkins CI/CD 管理�
 - **增量构建分页**：构建列表支持按页加载（默认 10 条），提供「加载更多构建...」按需展开历史记录。
 
 #### 3. 虚拟文档与流式日志 (Virtual Documents & Logs)
-- **流水线脚本编辑 (`jenkins:` 协议)**：
-  - 虚拟文档打开控制器存储的 CPS 流水线脚本 (`jenkins://<instance>/pipeline/<job>.groovy`)。
+- **流水线脚本编辑 (`at-jenkins:` 协议)**：
+  - 可编辑草稿打开控制器存储的 CPS 流水线脚本 (`at-jenkins-draft://{instanceId}/Jenkinsfile?job={jobFullName}`)。
   - 原生 Groovy 语法高亮，支持在编辑器中直接修改并保存（`Cmd+S` / `Ctrl+S`）同步回 Jenkins 服务端。
 - **实时构建日志查看**：
-  - 虚拟文档打开构建控制台日志 (`jenkins://<instance>/build-log/<job>/<number>.log`)。
+  - 虚拟文档打开构建控制台日志 (`at-jenkins://{instanceId}/{buildNumber}/consoleText?job={jobFullName}`)。
   - 对正在运行的构建自动开启 3 秒轮询增量刷新，构建完成后自动停止轮询。
 - **输出通道跟踪 (Follow in Output)**：
   - 支持将构建日志实时流式输出到 VS Code Output Channel（`AT Jenkins`），支持进度跟踪与终端式阅读。
@@ -43,16 +43,16 @@ AT Jenkins 是一款面向 VS Code 与 Cursor 的专业级 Jenkins CI/CD 管理�
 
 #### 5. AI Agent 与 MCP 支持 (MCP Integration)
 - **内置 7 大只读 MCP 工具**（严格只读，UI 可写，MCP 只读）：
-  1. `jenkins_list_instances`：列出已开启后台访问的 Jenkins 控制器。
-  2. `jenkins_list_jobs`：查询任务列表（支持指定 `folder` 递归查询）。
+  1. `jenkins_list_instances`：列出全部已配置控制器及标志；其它工具需开启后台访问。
+  2. `jenkins_list_jobs`：查询任务列表（支持可选 `folderFullName`）。
   3. `jenkins_get_job`：获取指定任务的详细元数据与参数定义。
   4. `jenkins_get_pipeline_script`：获取控制器存储的 Pipeline 流水线脚本内容。
   5. `jenkins_list_builds`：分页查询指定任务的构建历史记录。
-  6. `jenkins_get_build`：获取单次构建的详细信息（状态、耗时、时间戳、变更集等）。
-  7. `jenkins_get_build_log`：获取构建控制台日志文本（支持尾部 64 KiB 截断与 `start` 偏移量分块读取）。
+  6. `jenkins_get_build`：获取单次构建的详细信息（状态、耗时、时间戳等）。
+  7. `jenkins_get_build_log`：获取构建控制台日志文本（支持尾部 64 KiB 截断与 `start` 偏移量分块读取；元数据含 `hasMore` / `endByte` / `truncated`）。
 - **安全防线 (Hard Exclusions)**：
   - **严格只读**：MCP 工具集坚决不提供任何写操作工具。
-  - **后台访问门禁 (`allowBackgroundAccess`)**：每个控制器实例独立提供后台访问开关（默认关闭），未开启时 Agent 无法通过 MCP 发现或查询该控制器。
+  - **后台访问门禁 (`allowBackgroundAccess`)**：每个控制器实例独立提供后台访问开关（默认关闭）；未开启时仍可通过 `jenkins_list_instances` 列出（含标志），但其它 `jenkins_*` 工具会拒绝访问。
   - **敏感数据脱敏**：绝不在 MCP 工具响应中返回密码、Token 等敏感凭据。
 - **MCP Hub 互通**：内置 Bridge 桥接服务，无缝接入 `@at-series/mcp-hub` 统一协议。
 

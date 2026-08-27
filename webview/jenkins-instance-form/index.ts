@@ -53,8 +53,17 @@ function field(name: string): HTMLInputElement | HTMLSelectElement | HTMLTextAre
     : null;
 }
 
+function cleanBaseUrl(url: string): string {
+  let val = url.trim();
+  if (val && !/^https?:\/\//i.test(val)) {
+    val = `http://${val}`;
+  }
+  return val.replace(/\/+$/, '');
+}
+
 function readValue(name: string): string {
-  return field(name)?.value ?? '';
+  const val = field(name)?.value ?? '';
+  return name === 'baseUrl' ? cleanBaseUrl(val) : val;
 }
 
 function isChecked(name: string): boolean {
@@ -116,6 +125,38 @@ function applyAuthMode(mode: string): void {
 
 authMode?.addEventListener('change', () => {
   applyAuthMode(authMode.value);
+});
+
+// Password visibility toggles
+document.querySelectorAll<HTMLButtonElement>('.password-toggle-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const input = btn.closest('.input-with-toggle')?.querySelector<HTMLInputElement>('input');
+    if (!input) {
+      return;
+    }
+    const isPassword = input.type === 'password';
+    input.type = isPassword ? 'text' : 'password';
+    const icon = btn.querySelector<HTMLElement>('.toggle-icon');
+    if (icon) {
+      icon.textContent = isPassword ? '🙈' : '👁';
+    }
+  });
+});
+
+// Auto-clean Base URL on blur
+const baseUrlInput = field('baseUrl') as HTMLInputElement | null;
+baseUrlInput?.addEventListener('blur', () => {
+  if (baseUrlInput.value.trim()) {
+    baseUrlInput.value = cleanBaseUrl(baseUrlInput.value);
+  }
+});
+
+// Keyboard shortcut: Ctrl+Enter or Cmd+Enter to submit
+form?.addEventListener('keydown', (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+    event.preventDefault();
+    form.requestSubmit();
+  }
 });
 
 form?.addEventListener('submit', (event) => {

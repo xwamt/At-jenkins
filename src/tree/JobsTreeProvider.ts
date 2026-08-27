@@ -45,16 +45,72 @@ export class JenkinsFolderTreeItem extends vscode.TreeItem {
   }
 }
 
+export interface WeatherReport {
+  icon: string;
+  score: number;
+  description: string;
+}
+
+export function calculateWeatherScore(builds: BuildSummary[]): WeatherReport | undefined {
+  if (!builds || builds.length === 0) {
+    return undefined;
+  }
+  const completed = builds.filter((b) => !b.building && b.result);
+  if (completed.length === 0) {
+    return undefined;
+  }
+  const sample = completed.slice(0, 5);
+  const passed = sample.filter((b) => b.result?.toUpperCase() === 'SUCCESS').length;
+  const score = Math.round((passed / sample.length) * 100);
+
+  let icon = '☀️';
+  let description = t('Sunny (100% build stability)');
+  if (score >= 80 && score < 100) {
+    icon = '⛅';
+    description = t('Mostly Sunny ({score}% build stability)', { score: String(score) });
+  } else if (score >= 40 && score < 80) {
+    icon = '🌧️';
+    description = t('Rainy ({score}% build stability)', { score: String(score) });
+  } else if (score < 40) {
+    icon = '⛈️';
+    description = t('Stormy ({score}% build stability)', { score: String(score) });
+  }
+
+  return { icon, score, description };
+}
+
+export function formatJobTypeBadge(job: JobSummary): string | undefined {
+  if (job.isMultibranch || job._class?.includes('WorkflowMultiBranchProject') || job._class?.includes('OrganizationFolder')) {
+    return '[Multibranch]';
+  }
+  if (job._class?.includes('WorkflowJob') || job._class?.includes('CpsFlowDefinition')) {
+    return '[Pipeline]';
+  }
+  if (job._class?.includes('FreeStyleProject')) {
+    return '[Freestyle]';
+  }
+  return undefined;
+}
+
 export class JenkinsJobTreeItem extends vscode.TreeItem {
   constructor(
     public readonly job: JobSummary,
-    public readonly instanceId: string
+    public readonly instanceId: string,
+    public readonly weather?: WeatherReport
   ) {
     super(job.name, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = jobId(job.fullName);
     this.contextValue = resolveJobContextValue(job);
     this.iconPath = getJobIcon(job.color);
-    this.tooltip = buildJobTooltip(job);
+    const badge = formatJobTypeBadge(job);
+    const isBuilding = job.color?.endsWith('_anime');
+    this.description = [
+      badge,
+      isBuilding ? t('Building...') : weather ? `${weather.icon} ${weather.score}%` : undefined
+    ]
+      .filter(Boolean)
+      .join(' ');
+    this.tooltip = buildJobTooltip(job, weather);
   }
 }
 
@@ -368,10 +424,17 @@ function buildFolderTooltip(folder: JobSummary): vscode.MarkdownString {
   return md;
 }
 
-function buildJobTooltip(job: JobSummary): vscode.MarkdownString {
+function buildJobTooltip(job: JobSummary, weather?: WeatherReport): vscode.MarkdownString {
   const md = new vscode.MarkdownString('', true);
   md.appendMarkdown(`**${job.name}**\n\n`);
   md.appendMarkdown(`- **${t('Full Name')}:** \`${job.fullName}\`\n`);
+  const typeBadge = formatJobTypeBadge(job);
+  if (typeBadge) {
+    md.appendMarkdown(`- **${t('Type')}:** \`${typeBadge.replace(/[\[\]]/g, '')}\`\n`);
+  }
+  if (weather) {
+    md.appendMarkdown(`- **${t('Stability')}:** ${weather.icon} ${weather.description}\n`);
+  }
   if (job.color) {
     md.appendMarkdown(`- **${t('Status')}:** ${job.color}\n`);
   }

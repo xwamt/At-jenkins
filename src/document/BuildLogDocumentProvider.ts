@@ -9,9 +9,15 @@ import {
   parseJenkinsDocumentUri
 } from './uri';
 
+/** UI virtual docs show a larger tail than MCP and always annotate truncation. */
+export const UI_LOG_TAIL_BYTES = 2 * 1024 * 1024;
+/** Per-poll chunk size for Output follow (advance via endByte, never skip). */
+export const OUTPUT_FOLLOW_CHUNK_BYTES = 256 * 1024;
+
 export interface BuildLogDocumentProviderOptions {
   pollIntervalMs?: number;
   log?: AtJenkinsLog;
+  uiLogTailBytes?: number;
 }
 
 export class BuildLogDocumentProvider
@@ -21,20 +27,21 @@ export class BuildLogDocumentProvider
   readonly onDidChange: vscode.Event<vscode.Uri> = this.onDidChangeEmitter.event;
 
   private readonly activePollers = new Map<string, NodeJS.Timeout>();
+  private readonly pollFailures = new Map<string, number>();
   private readonly pollIntervalMs: number;
+  private readonly uiLogTailBytes: number;
   private readonly log: AtJenkinsLog;
+  private readonly maxConsecutiveFailures = 3;
 
   constructor(
     private readonly clientPool: JenkinsClientPool,
     options?: BuildLogDocumentProviderOptions
   ) {
     this.pollIntervalMs = options?.pollIntervalMs ?? 3000;
+    this.uiLogTailBytes = options?.uiLogTailBytes ?? UI_LOG_TAIL_BYTES;
     this.log = asRedactedLog(options?.log ?? noopLog);
   }
 
-  /**
-   * Loads console text for a build and initiates progressive auto-refresh if the build is running.
-   */
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const target = parseJenkinsDocumentUri(uri);
     if (!target || target.type !== 'log') {
@@ -43,7 +50,9 @@ export class BuildLogDocumentProvider
 
     try {
       const client = await this.clientPool.get(target.instanceId);
-      const logResult = await client.getBuildLog(target.jobFullName, target.buildNumber);
+      const logResult = await client.getBuildLog(target.jobFullName, target.buildNumber, {
+        tailBytes: this.uiLogTailBytes
+      });
 
       try {
         const build = await client.getBuild(target.jobFullName, target.buildNumber);
@@ -56,6 +65,17 @@ export class BuildLogDocumentProvider
         this.log.debug(
           `Could not inspect build status for ${target.jobFullName} #${target.buildNumber}: ${formatError(err)}`
         );
+      }
+
+      if (logResult.truncated) {
+        const notice = t(
+          'Log truncated: showing last {shown} of {total} bytes (increase limit or use Output follow for streaming).',
+          {
+            shown: String(logResult.endByte - logResult.startByte),
+            total: String(logResult.totalBytes)
+          }
+        );
+        return `// ${notice}\n\n${logResult.text}`;
       }
 
       return logResult.text;
@@ -71,9 +91,6 @@ export class BuildLogDocumentProvider
     }
   }
 
-  /**
-   * Starts periodic polling for an active running build log.
-   */
   startAutoRefresh(
     uri: vscode.Uri,
     instanceId: string,
@@ -89,22 +106,28 @@ export class BuildLogDocumentProvider
       try {
         const client = await this.clientPool.get(instanceId);
         const build = await client.getBuild(jobFullName, buildNumber);
+        this.pollFailures.set(key, 0);
         this.onDidChangeEmitter.fire(uri);
 
         if (!build.building) {
           this.stopAutoRefresh(uri);
         }
       } catch (err) {
+        const failures = (this.pollFailures.get(key) ?? 0) + 1;
+        this.pollFailures.set(key, failures);
         this.log.debug(`Error during auto-refresh of build log ${key}: ${formatError(err)}`);
+        if (failures >= this.maxConsecutiveFailures) {
+          this.log.error(
+            `Stopping build log auto-refresh for ${key} after ${failures} consecutive failures`
+          );
+          this.stopAutoRefresh(uri);
+        }
       }
     }, this.pollIntervalMs);
 
     this.activePollers.set(key, timer);
   }
 
-  /**
-   * Stops active polling for the given URI.
-   */
   stopAutoRefresh(uri: vscode.Uri): void {
     const key = uri.toString();
     const timer = this.activePollers.get(key);
@@ -112,26 +135,22 @@ export class BuildLogDocumentProvider
       clearInterval(timer);
       this.activePollers.delete(key);
     }
+    this.pollFailures.delete(key);
   }
 
-  /**
-   * Cancels polling when the document is closed in VS Code.
-   */
   handleDidCloseTextDocument(document: vscode.TextDocument): void {
     if (document.uri.scheme === JENKINS_DOCUMENT_SCHEME) {
       this.stopAutoRefresh(document.uri);
     }
   }
 
-  /**
-   * Manually refreshes a build log document.
-   */
   refresh(instanceId: string, jobFullName: string, buildNumber: number): void {
     this.onDidChangeEmitter.fire(buildBuildLogUri(instanceId, jobFullName, buildNumber));
   }
 
   /**
-   * Streams build log output incrementally into VS Code OutputChannel until the build completes.
+   * Streams build log into OutputChannel. Advances with `endByte` and drains
+   * `hasMore` chunks so growth larger than one chunk never skips bytes.
    */
   async followBuildLogInOutput(
     instanceId: string,
@@ -152,6 +171,7 @@ export class BuildLogDocumentProvider
     let startOffset = 0;
     let cancelled = false;
     let timer: NodeJS.Timeout | undefined;
+    let inFlight = false;
 
     const disposable = new vscode.Disposable(() => {
       cancelled = true;
@@ -165,44 +185,63 @@ export class BuildLogDocumentProvider
       options.signal.addEventListener('abort', () => disposable.dispose());
     }
 
-    try {
-      const initialLog = await client.getBuildLog(jobFullName, buildNumber, { start: 0 });
-      channel.append(initialLog.text);
-      startOffset = initialLog.totalBytes;
-
-      const build = await client.getBuild(jobFullName, buildNumber);
-      if (!build.building) {
+    const appendFromOffset = async (): Promise<boolean> => {
+      while (!cancelled) {
+        const chunk = await client.getBuildLog(jobFullName, buildNumber, {
+          start: startOffset,
+          maxBytes: OUTPUT_FOLLOW_CHUNK_BYTES
+        });
+        if (chunk.text) {
+          channel.append(chunk.text);
+        }
+        startOffset = chunk.endByte;
+        if (!chunk.hasMore) {
+          break;
+        }
+      }
+      if (cancelled) {
+        return false;
+      }
+      const currentBuild = await client.getBuild(jobFullName, buildNumber);
+      if (!currentBuild.building) {
         channel.appendLine(
-          `=== Build finished with result: ${build.result ?? 'UNKNOWN'} ===`
+          `=== Build finished with result: ${currentBuild.result ?? 'UNKNOWN'} ===`
         );
+        return false;
+      }
+      return true;
+    };
+
+    try {
+      const stillBuilding = await appendFromOffset();
+      if (!stillBuilding) {
         return disposable;
       }
 
       const pollMs = options?.pollIntervalMs ?? this.pollIntervalMs;
+      let consecutiveFailures = 0;
       timer = setInterval(async () => {
-        if (cancelled) {
+        if (cancelled || inFlight) {
           return;
         }
+        inFlight = true;
         try {
-          const chunk = await client.getBuildLog(jobFullName, buildNumber, {
-            start: startOffset
-          });
-          if (chunk.text) {
-            channel.append(chunk.text);
-          }
-          startOffset = chunk.totalBytes;
-
-          const currentBuild = await client.getBuild(jobFullName, buildNumber);
-          if (!currentBuild.building) {
-            channel.appendLine(
-              `=== Build finished with result: ${currentBuild.result ?? 'UNKNOWN'} ===`
-            );
+          const stillRunning = await appendFromOffset();
+          consecutiveFailures = 0;
+          if (!stillRunning) {
             disposable.dispose();
           }
         } catch (err) {
+          consecutiveFailures += 1;
           this.log.error(
             `Error following build log for ${instanceId}/${jobFullName} #${buildNumber}: ${formatError(err)}`
           );
+          if (consecutiveFailures >= 3) {
+            channel.appendLine(`=== Stopped following after repeated errors ===`);
+            disposable.dispose();
+          }
+        } finally {
+          inFlight = false;
         }
       }, pollMs);
     } catch (err) {
@@ -217,6 +256,7 @@ export class BuildLogDocumentProvider
       clearInterval(timer);
     }
     this.activePollers.clear();
+    this.pollFailures.clear();
     this.onDidChangeEmitter.dispose();
   }
 }

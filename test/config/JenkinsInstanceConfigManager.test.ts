@@ -277,19 +277,14 @@ describe('JenkinsInstanceConfigManager', () => {
         baseUrl: 'https://ci.example.com',
         authMode: 'apiToken',
         username: 'bot',
-        apiToken: 'initial-secret-token',
-        password: 'initial-secret-password'
+        apiToken: 'initial-secret-token'
       });
 
-      // Update without secrets
       await manager.updateInstance(created.id, { label: 'renamed' });
       expect(await manager.getApiToken(created.id)).toBe('initial-secret-token');
-      expect(await manager.getPassword(created.id)).toBe('initial-secret-password');
 
-      // Update with empty string secrets (series convention: keeps previous secret)
-      await manager.updateInstance(created.id, {}, { apiToken: '', password: '' });
+      await manager.updateInstance(created.id, {}, { apiToken: '' });
       expect(await manager.getApiToken(created.id)).toBe('initial-secret-token');
-      expect(await manager.getPassword(created.id)).toBe('initial-secret-password');
     });
 
     it('rotates secrets when update passes new non-empty values', async () => {
@@ -302,9 +297,29 @@ describe('JenkinsInstanceConfigManager', () => {
 
       await manager.updateInstance(created.id, {}, { apiToken: 'token-v2' });
       expect(await manager.getApiToken(created.id)).toBe('token-v2');
+    });
 
-      await manager.updateInstance(created.id, {}, { password: 'pwd-v1' });
-      expect(await manager.getPassword(created.id)).toBe('pwd-v1');
+    it('deletes unused secrets when authMode changes', async () => {
+      const created = await manager.createInstance({
+        label: 'mode-switch',
+        baseUrl: 'https://ci.example.com',
+        authMode: 'apiToken',
+        username: 'bot',
+        apiToken: 'tok-old'
+      });
+      expect(await manager.getApiToken(created.id)).toBe('tok-old');
+
+      await manager.updateInstance(
+        created.id,
+        { authMode: 'password' },
+        { password: 'pwd-new' }
+      );
+      expect(await manager.getApiToken(created.id)).toBeUndefined();
+      expect(await manager.getPassword(created.id)).toBe('pwd-new');
+
+      await manager.updateInstance(created.id, { authMode: 'none' });
+      expect(await manager.getApiToken(created.id)).toBeUndefined();
+      expect(await manager.getPassword(created.id)).toBeUndefined();
     });
   });
 
@@ -314,19 +329,16 @@ describe('JenkinsInstanceConfigManager', () => {
         label: 'to-delete',
         baseUrl: 'https://ci.example.com',
         authMode: 'apiToken',
-        apiToken: 'token-to-delete',
-        password: 'password-to-delete'
+        apiToken: 'token-to-delete'
       });
 
       expect(await manager.getInstance(created.id)).toBeDefined();
       expect(await manager.getApiToken(created.id)).toBe('token-to-delete');
-      expect(await manager.getPassword(created.id)).toBe('password-to-delete');
 
       await manager.deleteInstance(created.id);
 
       expect(await manager.getInstance(created.id)).toBeUndefined();
       expect(await manager.getApiToken(created.id)).toBeUndefined();
-      expect(await manager.getPassword(created.id)).toBeUndefined();
       expect(await manager.listInstances()).toEqual([]);
     });
 

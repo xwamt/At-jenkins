@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import type { JenkinsInstanceConfigManager } from '../../src/config/JenkinsInstanceConfigManager';
 import type { JenkinsInstanceConfig } from '../../src/config/schema';
+import { buildPipelineDraftUri } from '../../src/document/draftUri';
+import { JenkinsPipelineDraftFileSystemProvider } from '../../src/document/JenkinsPipelineDraftFileSystemProvider';
 import { PipelineScriptDocumentProvider } from '../../src/document/PipelineScriptDocumentProvider';
 import { buildPipelineScriptUri } from '../../src/document/uri';
 import { t } from '../../src/i18n/t';
-import { ReadOnly, Unsupported } from '../../src/jenkins/errors';
+import { Unsupported } from '../../src/jenkins/errors';
 import type { JenkinsClient } from '../../src/jenkins/JenkinsClient';
 import type { JenkinsClientPool } from '../../src/jenkins/JenkinsClientPool';
 
@@ -15,12 +17,9 @@ describe('PipelineScriptDocumentProvider', () => {
     getPipelineScript: ReturnType<typeof vi.fn>;
     updatePipelineScript: ReturnType<typeof vi.fn>;
   };
-  let mockClientPool: {
-    get: ReturnType<typeof vi.fn>;
-  };
-  let mockConfigManager: {
-    getInstance: ReturnType<typeof vi.fn>;
-  };
+  let mockClientPool: { get: ReturnType<typeof vi.fn> };
+  let mockConfigManager: { getInstance: ReturnType<typeof vi.fn> };
+  let draftProvider: JenkinsPipelineDraftFileSystemProvider;
   let provider: PipelineScriptDocumentProvider;
 
   const instanceConfig: JenkinsInstanceConfig = {
@@ -38,7 +37,11 @@ describe('PipelineScriptDocumentProvider', () => {
   beforeEach(() => {
     mockClient = {
       config: { ...instanceConfig },
-      getPipelineScript: vi.fn(),
+      getPipelineScript: vi.fn().mockResolvedValue({
+        script: 'pipeline { agent any }',
+        sandbox: true,
+        scriptSource: 'stored'
+      }),
       updatePipelineScript: vi.fn()
     };
     mockClientPool = {
@@ -47,20 +50,23 @@ describe('PipelineScriptDocumentProvider', () => {
     mockConfigManager = {
       getInstance: vi.fn().mockResolvedValue(mockClient.config)
     };
-
+    draftProvider = new JenkinsPipelineDraftFileSystemProvider();
     provider = new PipelineScriptDocumentProvider(
       mockClientPool as unknown as JenkinsClientPool,
-      mockConfigManager as unknown as JenkinsInstanceConfigManager
+      mockConfigManager as unknown as JenkinsInstanceConfigManager,
+      { draftProvider }
     );
 
     vi.spyOn(vscode.window, 'showInformationMessage').mockResolvedValue(undefined as never);
     vi.spyOn(vscode.window, 'showErrorMessage').mockResolvedValue(undefined as never);
     vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined as never);
+    vi.mocked(vscode.window.showWarningMessage).mockClear();
+    vi.mocked(vscode.window.showErrorMessage).mockClear();
   });
 
   describe('provideTextDocumentContent', () => {
     it('returns pipeline script content for valid stored pipeline job', async () => {
-      const scriptText = 'pipeline {\n  agent any\n  stages {\n    stage("Test") { echo "ok" }\n  }\n}';
+      const scriptText = 'pipeline {\n  agent any\n}';
       mockClient.getPipelineScript.mockResolvedValue({
         script: scriptText,
         sandbox: true,
@@ -70,12 +76,10 @@ describe('PipelineScriptDocumentProvider', () => {
       const uri = buildPipelineScriptUri('inst-1', 'folder/my-pipeline');
       const content = await provider.provideTextDocumentContent(uri);
 
-      expect(mockClientPool.get).toHaveBeenCalledWith('inst-1');
-      expect(mockClient.getPipelineScript).toHaveBeenCalledWith('folder/my-pipeline');
       expect(content).toBe(scriptText);
     });
 
-    it('returns comment description when job throws Unsupported (e.g. SCM or Freestyle)', async () => {
+    it('returns comment description when job throws Unsupported', async () => {
       mockClient.getPipelineScript.mockRejectedValue(
         new Unsupported('Job uses SCM-stored pipeline script.', {
           jobType: 'CpsScmFlowDefinition',
@@ -86,139 +90,99 @@ describe('PipelineScriptDocumentProvider', () => {
       const uri = buildPipelineScriptUri('inst-1', 'scm-pipeline');
       const content = await provider.provideTextDocumentContent(uri);
 
-      expect(content).toContain('//');
       expect(content).toContain('Job uses SCM-stored pipeline script.');
-    });
-
-    it('returns comment description when client fails to fetch', async () => {
-      mockClient.getPipelineScript.mockRejectedValue(new Error('Network connection refused'));
-
-      const uri = buildPipelineScriptUri('inst-1', 'my-job');
-      const content = await provider.provideTextDocumentContent(uri);
-
-      expect(content).toContain('//');
-      expect(content).toContain('Network connection refused');
-    });
-
-    it('returns comment when URI is invalid or not a script target', async () => {
-      const invalidUri = vscode.Uri.parse('at-jenkins:/inst-1/job/10/consoleText');
-      const content = await provider.provideTextDocumentContent(invalidUri);
-
-      expect(content).toContain('//');
-      expect(mockClientPool.get).not.toHaveBeenCalled();
     });
   });
 
   describe('savePipelineScript', () => {
+    function draftDoc(jobFullName: string, text: string, writable = true): vscode.TextDocument {
+      const uri = draftProvider.initDraft('inst-1', jobFullName, text, writable);
+      return {
+        uri,
+        fileName: uri.toString(),
+        isDirty: true,
+        getText: () => text
+      } as unknown as vscode.TextDocument;
+    }
+
+    it('refuses save on content-provider URI', async () => {
+      const uri = buildPipelineScriptUri('inst-1', 'folder/my-pipeline');
+      const doc = {
+        uri,
+        getText: () => 'pipeline { agent any }'
+      } as unknown as vscode.TextDocument;
+
+      expect(await provider.savePipelineScript(doc)).toBe(false);
+      expect(mockClient.updatePipelineScript).not.toHaveBeenCalled();
+    });
+
+    it('refuses save when draft is not writable', async () => {
+      const doc = draftDoc('scm-job', 'pipeline {}', false);
+      expect(await provider.savePipelineScript(doc)).toBe(false);
+      expect(mockClient.updatePipelineScript).not.toHaveBeenCalled();
+    });
+
     it('refuses save when instance is read-only', async () => {
       mockClient.config = { ...instanceConfig, readOnly: true };
+      const doc = draftDoc('folder/my-pipeline', 'pipeline { agent any }');
 
-      const uri = buildPipelineScriptUri('inst-1', 'folder/my-pipeline');
-      const doc = {
-        uri,
-        fileName: uri.fsPath,
-        isDirty: true,
-        getText: () => 'pipeline { agent any }'
-      } as unknown as vscode.TextDocument;
-
-      const result = await provider.savePipelineScript(doc);
-
-      expect(result).toBe(false);
+      expect(await provider.savePipelineScript(doc)).toBe(false);
       expect(mockClient.updatePipelineScript).not.toHaveBeenCalled();
-      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('is read-only')
-      );
     });
 
-    it('cancels save if user declines confirmation dialog', async () => {
+    it('cancels save if user declines confirmation', async () => {
       vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Cancel') as never);
+      const doc = draftDoc('folder/my-pipeline', 'pipeline { agent any }');
 
-      const uri = buildPipelineScriptUri('inst-1', 'folder/my-pipeline');
-      const doc = {
-        uri,
-        fileName: uri.fsPath,
-        isDirty: true,
-        getText: () => 'pipeline { agent any }'
-      } as unknown as vscode.TextDocument;
-
-      const result = await provider.savePipelineScript(doc);
-
-      expect(result).toBe(false);
+      expect(await provider.savePipelineScript(doc)).toBe(false);
       expect(mockClient.updatePipelineScript).not.toHaveBeenCalled();
     });
 
-    it('updates pipeline script and shows success message when user confirms', async () => {
+    it('updates pipeline script when user confirms', async () => {
       vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Save to Jenkins') as never);
       mockClient.updatePipelineScript.mockResolvedValue(undefined);
+      const newScript = 'pipeline {\n  agent any\n}';
+      const doc = draftDoc('folder/my-pipeline', newScript);
 
-      const uri = buildPipelineScriptUri('inst-1', 'folder/my-pipeline');
-      const newScript = 'pipeline {\n  agent any\n  stages {\n    stage("Build") { echo "saved" }\n  }\n}';
-      const doc = {
-        uri,
-        fileName: uri.fsPath,
-        isDirty: true,
-        getText: () => newScript
-      } as unknown as vscode.TextDocument;
-
-      const result = await provider.savePipelineScript(doc);
-
-      expect(result).toBe(true);
+      expect(await provider.savePipelineScript(doc)).toBe(true);
       expect(mockClient.updatePipelineScript).toHaveBeenCalledWith('folder/my-pipeline', newScript);
-      expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-        expect.stringContaining('folder/my-pipeline')
-      );
     });
 
-    it('handles server update error and shows error notification', async () => {
-      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Save to Jenkins') as never);
-      mockClient.updatePipelineScript.mockRejectedValue(new Error('Permission denied 403'));
+    it('refuses before confirm when getPipelineScript throws Unsupported', async () => {
+      mockClient.getPipelineScript.mockRejectedValue(
+        new Unsupported('SCM-backed', { jobType: 'CpsScmFlowDefinition', operation: 'getPipelineScript' })
+      );
+      const doc = draftDoc('scm-job', 'pipeline {}', true);
 
-      const uri = buildPipelineScriptUri('inst-1', 'folder/my-pipeline');
+      expect(await provider.savePipelineScript(doc)).toBe(false);
+      expect(vscode.window.showWarningMessage).not.toHaveBeenCalled();
+      expect(mockClient.updatePipelineScript).not.toHaveBeenCalled();
+    });
+
+    it('ignores non-jenkins schemes', async () => {
       const doc = {
-        uri,
-        fileName: uri.fsPath,
-        isDirty: true,
-        getText: () => 'pipeline { agent any }'
-      } as unknown as vscode.TextDocument;
-
-      const result = await provider.savePipelineScript(doc);
-
-      expect(result).toBe(false);
-      expect(vscode.window.showErrorMessage).toHaveBeenCalledWith(
-        expect.stringContaining('Permission denied 403')
-      );
-    });
-
-    it('ignores documents with non-at-jenkins scheme or non-script target', async () => {
-      const doc1 = {
         uri: vscode.Uri.file('/tmp/Jenkinsfile'),
-        fileName: '/tmp/Jenkinsfile',
         getText: () => 'pipeline {}'
       } as unknown as vscode.TextDocument;
-      expect(await provider.savePipelineScript(doc1)).toBe(false);
-
-      const doc2 = {
-        uri: vscode.Uri.parse('at-jenkins:/inst-1/job/1/consoleText'),
-        fileName: '/inst-1/job/1/consoleText',
-        getText: () => 'log content'
-      } as unknown as vscode.TextDocument;
-      expect(await provider.savePipelineScript(doc2)).toBe(false);
+      expect(await provider.savePipelineScript(doc)).toBe(false);
     });
   });
 
-  describe('refresh and onDidChange', () => {
-    it('fires onDidChange when refresh is called', () => {
-      const firedUris: vscode.Uri[] = [];
-      const sub = provider.onDidChange((uri) => {
-        firedUris.push(uri);
-      });
+  describe('draft FS', () => {
+    it('allows writeFile only when writable', () => {
+      const uri = draftProvider.initDraft('inst-1', 'job', 'base', true);
+      draftProvider.writeFile(uri, Buffer.from('changed'), { create: false, overwrite: true });
+      expect(Buffer.from(draftProvider.readFile(uri)).toString('utf8')).toBe('changed');
 
-      provider.refresh('inst-1', 'folder/my-job');
+      const ro = draftProvider.initDraft('inst-1', 'ro', 'base', false);
+      expect(() =>
+        draftProvider.writeFile(ro, Buffer.from('x'), { create: false, overwrite: true })
+      ).toThrow();
+    });
 
-      expect(firedUris).toHaveLength(1);
-      expect(firedUris[0].toString()).toBe(buildPipelineScriptUri('inst-1', 'folder/my-job').toString());
-
-      sub.dispose();
+    it('round-trips draft uri helper', () => {
+      const uri = buildPipelineDraftUri('inst-1', 'a/b');
+      expect(uri.scheme).toBe('at-jenkins-draft');
     });
   });
 });

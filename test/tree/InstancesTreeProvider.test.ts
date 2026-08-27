@@ -86,7 +86,7 @@ describe('InstancesTreeProvider', () => {
     const alphaItem = children.find((c) => c.instance.id === inst1.id)!;
     expect(alphaItem).toBeDefined();
     expect(alphaItem.label).toBe('Alpha Controller');
-    expect(alphaItem.description).toBe('https://alpha.example.com');
+    expect(alphaItem.description).toBe('https://alpha.example.com [Agent]');
     expect(alphaItem.isActive).toBe(true);
     expect(alphaItem.contextValue).toBe('atJenkins.instance.active');
     expect((alphaItem.iconPath as vscode.ThemeIcon).id).toBe('radio-tower');

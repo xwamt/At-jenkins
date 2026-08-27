@@ -376,13 +376,35 @@ describe('JenkinsHttpClient TLS and TOFU verification', () => {
     expect(tlsServer.requests).toHaveLength(1);
   });
 
-  it('allows insecure TLS when verifyTls is false and no verifier provided', async () => {
+  it('ignores certVerifier when verifyTls is true and still uses system CA (self-signed fails)', async () => {
+    tlsServer = await startTestHttpsServer((_request, response) => response.end('{}'));
+    let consulted = false;
+    const client = new JenkinsHttpClient({
+      baseUrl: tlsServer.origin,
+      verifyTls: true,
+      certVerifier: {
+        verify: async () => {
+          consulted = true;
+          return true;
+        }
+      }
+    });
+    const error = await client.requestJson({ method: 'GET', path: '/api/json' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TlsError);
+    expect(consulted).toBe(false);
+    expect(tlsServer.requests).toHaveLength(0);
+  });
+
+  it('refuses insecure TLS when verifyTls is false and no verifier is provided', async () => {
     tlsServer = await startTestHttpsServer((_request, response) => {
       response.setHeader('content-type', 'application/json');
       response.end('{"ok":true}');
     });
     const client = new JenkinsHttpClient({ baseUrl: tlsServer.origin, verifyTls: false });
-    await expect(client.requestJson({ method: 'GET', path: '/api/json' })).resolves.toMatchObject({ ok: true });
+    const error = await client.requestJson({ method: 'GET', path: '/api/json' }).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(TlsError);
+    expect((error as TlsError).message).toMatch(/no certificate verifier/i);
+    expect(tlsServer.requests).toHaveLength(0);
   });
 
   it('maps verifier exception to TlsError', async () => {

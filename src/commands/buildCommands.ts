@@ -11,12 +11,17 @@ import {
 import { formatError } from '../utils/errors';
 import { asRedactedLog, noopLog, type AtJenkinsLog } from '../utils/logger';
 
+import type { JenkinsStatusBarManager } from '../utils/statusBar';
+
 export interface BuildCommandsContext {
   configManager: JenkinsInstanceConfigManager;
   clientPool: JenkinsClientPool;
   jobsTreeProvider?: JobsTreeProvider;
+  statusBar?: JenkinsStatusBarManager;
   log?: AtJenkinsLog;
 }
+
+const recentParamsCache = new Map<string, Record<string, string | number | boolean>>();
 
 export type TriggerBuildTarget =
   | JenkinsJobTreeItem
@@ -80,12 +85,14 @@ export async function triggerBuildHandler(
     }
 
     const job = await client.getJob(jobFullName);
+    const jobKey = `${instanceId}:${jobFullName}`;
+    const previousParams = recentParamsCache.get(jobKey);
 
     let collectedParams: Record<string, string | number | boolean> | undefined;
     if (job.parameters && job.parameters.length > 0) {
       collectedParams = {};
       for (const param of job.parameters) {
-        const paramValue = await promptParameterValue(param);
+        const paramValue = await promptParameterValue(param, previousParams?.[param.name]);
         if (paramValue === undefined) {
           // User dismissed or cancelled the parameter prompt
           return false;
@@ -107,9 +114,18 @@ export async function triggerBuildHandler(
 
     await client.triggerBuild(jobFullName, collectedParams);
 
-    vscode.window.showInformationMessage(
-      t('Build triggered for "{job}".', { job: jobFullName })
-    );
+    if (collectedParams) {
+      recentParamsCache.set(jobKey, collectedParams);
+    }
+
+    void vscode.window.showInformationMessage(
+      t('Build triggered for "{job}".', { job: jobFullName }),
+      t('Open Job Summary')
+    ).then(async (action) => {
+      if (action === t('Open Job Summary')) {
+        await vscode.commands.executeCommand('atJenkins.openJobSummary', { instanceId, jobFullName });
+      }
+    });
 
     if (context.jobsTreeProvider) {
       if (jobItem) {
@@ -137,7 +153,8 @@ export async function triggerBuildHandler(
  * Returns undefined if user cancels the prompt.
  */
 async function promptParameterValue(
-  param: JobParameterDefinition
+  param: JobParameterDefinition,
+  recentValue?: string | number | boolean
 ): Promise<string | number | boolean | undefined> {
   const isChoice =
     (param.choices && param.choices.length > 0) ||
@@ -148,9 +165,15 @@ async function promptParameterValue(
   const isPassword = param.type.toLowerCase().includes('password');
 
   if (isChoice && param.choices && param.choices.length > 0) {
+    const preferredChoice = recentValue !== undefined ? String(recentValue) : param.defaultValue;
     const items = param.choices.map((choice) => ({
       label: choice,
-      description: choice === param.defaultValue ? t('(default)') : undefined
+      description:
+        choice === preferredChoice
+          ? recentValue !== undefined
+            ? t('(recent)')
+            : t('(default)')
+          : undefined
     }));
     const selected = await vscode.window.showQuickPick(items, {
       title: t('Parameter: {name}', { name: param.name }),
@@ -163,19 +186,28 @@ async function promptParameterValue(
   }
 
   if (isBoolean) {
+    const activeValue = recentValue !== undefined ? recentValue : param.defaultValue;
     const isDefaultTrue =
-      param.defaultValue === true || param.defaultValue === 'true';
+      activeValue === true || activeValue === 'true';
     const isDefaultFalse =
-      param.defaultValue === false || param.defaultValue === 'false';
+      activeValue === false || activeValue === 'false';
 
     const items = [
       {
         label: 'true',
-        description: isDefaultTrue ? t('(default)') : undefined
+        description: isDefaultTrue
+          ? recentValue !== undefined
+            ? t('(recent)')
+            : t('(default)')
+          : undefined
       },
       {
         label: 'false',
-        description: isDefaultFalse ? t('(default)') : undefined
+        description: isDefaultFalse
+          ? recentValue !== undefined
+            ? t('(recent)')
+            : t('(default)')
+          : undefined
       }
     ];
 
@@ -190,9 +222,11 @@ async function promptParameterValue(
   }
 
   const defaultValue =
-    param.defaultValue !== undefined && param.defaultValue !== null
-      ? String(param.defaultValue)
-      : '';
+    recentValue !== undefined
+      ? String(recentValue)
+      : param.defaultValue !== undefined && param.defaultValue !== null
+        ? String(param.defaultValue)
+        : '';
 
   const input = await vscode.window.showInputBox({
     title: t('Parameter: {name}', { name: param.name }),
@@ -257,6 +291,17 @@ export async function stopBuildHandler(
       vscode.window.showErrorMessage(
         t('Cannot stop build: controller "{label}" is read-only.', {
           label: instance.label || instanceId
+        })
+      );
+      return false;
+    }
+
+    const build = await client.getBuild(jobFullName, buildNumber);
+    if (!build.building) {
+      vscode.window.showInformationMessage(
+        t('Build #{number} of "{job}" is not running.', {
+          number: buildNumber,
+          job: jobFullName
         })
       );
       return false;

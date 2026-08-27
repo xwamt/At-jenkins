@@ -6,6 +6,10 @@
   "publisher": "local",
   "icon": "media/at-jenkins-icon.png",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xwamt/At-jenkins.git"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -90,6 +94,11 @@
         "command": "atJenkins.openPipelineScript",
         "title": "%atJenkins.command.openPipelineScript.title%",
         "icon": "$(file-code)"
+      },
+      {
+        "command": "atJenkins.openJobSummary",
+        "title": "%atJenkins.command.openJobSummary.title%",
+        "icon": "$(info)"
       },
       {
         "command": "atJenkins.openBuildLog",
@@ -207,6 +216,11 @@
           "command": "atJenkins.openPipelineScript",
           "when": "view == atJenkins.jobs && viewItem == jenkinsJob.pipeline",
           "group": "inline@2"
+        },
+        {
+          "command": "atJenkins.openJobSummary",
+          "when": "view == atJenkins.jobs && (viewItem == jenkinsJob.freestyle || viewItem == jenkinsJob || viewItem == jenkinsJob.pipeline)",
+          "group": "inline@3"
         },
         {
           "command": "atJenkins.openBuildLog",

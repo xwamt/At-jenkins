@@ -89,6 +89,8 @@ describe('JenkinsInstancePanel', () => {
       expect(view.body).toContain('name="baseUrl"');
       expect(view.body).toContain('name="authMode"');
       expect(view.body).toContain('name="verifyTls" type="checkbox" checked');
+      expect(view.body).toContain('class="switch-slider"');
+      expect(view.body).toContain('class="password-toggle-btn"');
       expect(view.data).toHaveProperty('atJenkinsStrings');
     });
 
@@ -120,6 +122,7 @@ describe('JenkinsInstancePanel', () => {
       expect(view.body).toContain('Leave blank to keep the saved API token.');
       expect(view.body).toContain('id="readOnly" name="readOnly" type="checkbox" checked');
       expect(view.body).toContain('id="allowBackgroundAccess" name="allowBackgroundAccess" type="checkbox" checked');
+      expect(view.body).toContain('class="switch-slider"');
     });
   });
 

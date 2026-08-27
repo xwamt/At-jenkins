@@ -11,10 +11,14 @@ import { createInteractiveCertVerifier } from './jenkins/createInteractiveCertVe
 import { JenkinsCertTrustStore } from './jenkins/JenkinsCertTrustStore';
 import { JenkinsClientPool } from './jenkins/JenkinsClientPool';
 import { BuildLogDocumentProvider } from './document/BuildLogDocumentProvider';
+import { JENKINS_DRAFT_SCHEME } from './document/draftUri';
+import { JenkinsPipelineDraftFileSystemProvider } from './document/JenkinsPipelineDraftFileSystemProvider';
+import { JobSummaryDocumentProvider } from './document/JobSummaryDocumentProvider';
+import { openPipelineScriptDocument } from './document/openPipelineScriptDocument';
 import { PipelineScriptDocumentProvider } from './document/PipelineScriptDocumentProvider';
 import {
   buildBuildLogUri,
-  buildPipelineScriptUri,
+  buildJobSummaryUri,
   JENKINS_DOCUMENT_SCHEME,
   parseJenkinsDocumentUri
 } from './document/uri';
@@ -31,6 +35,7 @@ import {
 import { formatError } from './utils/errors';
 import { createRedactedLog } from './utils/logger';
 import { registerBuildCommands } from './commands/buildCommands';
+import { JenkinsStatusBarManager } from './utils/statusBar';
 import { JenkinsInstancePanel } from './webview/JenkinsInstancePanel';
 import { disposeOpenPanels } from './webview/openPanels';
 
@@ -47,6 +52,19 @@ export function activate(context: vscode.ExtensionContext): void {
   const certVerifier = createInteractiveCertVerifier(trustStore);
   clientPool = new JenkinsClientPool(configManager, { certVerifier, log });
 
+  const statusBar = new JenkinsStatusBarManager();
+  context.subscriptions.push(statusBar);
+
+  const syncStatusBar = async (): Promise<void> => {
+    try {
+      const active = await configManager.getActiveInstance();
+      statusBar.updateActiveInstance(active?.label);
+    } catch {
+      statusBar.updateActiveInstance(undefined);
+    }
+  };
+  void syncStatusBar();
+
   const instancesTreeProvider = new InstancesTreeProvider(configManager);
   const instancesTreeView = vscode.window.createTreeView('atJenkins.instances', {
     treeDataProvider: instancesTreeProvider
@@ -59,12 +77,14 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(jobsTreeView);
 
+  const draftFileSystemProvider = new JenkinsPipelineDraftFileSystemProvider();
   const pipelineScriptProvider = new PipelineScriptDocumentProvider(
     clientPool,
     configManager,
-    { log }
+    { log, draftProvider: draftFileSystemProvider }
   );
   const buildLogProvider = new BuildLogDocumentProvider(clientPool, { log });
+  const jobSummaryProvider = new JobSummaryDocumentProvider(clientPool, { log });
 
   const combinedContentProvider: vscode.TextDocumentContentProvider = {
     onDidChange: (listener) => {
@@ -85,10 +105,19 @@ export function activate(context: vscode.ExtensionContext): void {
       if (target?.type === 'log') {
         return buildLogProvider.provideTextDocumentContent(uri);
       }
+      if (target?.type === 'summary') {
+        return jobSummaryProvider.provideTextDocumentContent(uri);
+      }
       return `// ${t('Invalid Jenkins document URI.')}\n`;
     }
   };
 
+  context.subscriptions.push(
+    // Match nacos-draft: do not pass isReadonly (writable FS by default).
+    vscode.workspace.registerFileSystemProvider(JENKINS_DRAFT_SCHEME, draftFileSystemProvider, {
+      isCaseSensitive: true
+    })
+  );
   context.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider(
       JENKINS_DOCUMENT_SCHEME,
@@ -97,10 +126,14 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   context.subscriptions.push(pipelineScriptProvider);
   context.subscriptions.push(buildLogProvider);
+  context.subscriptions.push(draftFileSystemProvider);
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument(async (document) => {
-      if (document.uri.scheme === JENKINS_DOCUMENT_SCHEME) {
+      if (
+        document.uri.scheme === JENKINS_DRAFT_SCHEME ||
+        document.uri.scheme === JENKINS_DOCUMENT_SCHEME
+      ) {
         await pipelineScriptProvider.savePipelineScript(document);
       }
     })
@@ -117,6 +150,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const refreshAll = (): void => {
     instancesTreeProvider.refresh();
     jobsTreeProvider.refresh();
+    void syncStatusBar();
   };
 
   context.subscriptions.push(
@@ -386,16 +420,62 @@ export function activate(context: vscode.ExtensionContext): void {
           instanceId = await configManager.getActiveInstanceId();
         }
 
+        if (!instanceId || !clientPool) {
+          vscode.window.showInformationMessage(t('No active Jenkins controller selected.'));
+          return;
+        }
+
+        try {
+          await openPipelineScriptDocument({
+            instanceId,
+            jobFullName,
+            clientPool,
+            draftProvider: draftFileSystemProvider
+          });
+        } catch (error) {
+          vscode.window.showErrorMessage(
+            t('Failed to open pipeline script: {error}', { error: formatError(error) })
+          );
+        }
+      }
+    )
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.openJobSummary',
+      async (target?: JenkinsJobTreeItem | { instanceId?: string; jobFullName: string } | string) => {
+        let jobFullName: string | undefined;
+        let instanceId: string | undefined;
+
+        if (typeof target === 'string') {
+          jobFullName = target;
+        } else if (target instanceof JenkinsJobTreeItem) {
+          jobFullName = target.job.fullName;
+          instanceId = target.instanceId;
+        } else if (target && typeof target === 'object' && 'jobFullName' in target) {
+          jobFullName = target.jobFullName;
+          instanceId = target.instanceId;
+        }
+
+        if (!jobFullName) {
+          return;
+        }
+
+        if (!instanceId) {
+          instanceId = await configManager.getActiveInstanceId();
+        }
+
         if (!instanceId) {
           vscode.window.showInformationMessage(t('No active Jenkins controller selected.'));
           return;
         }
 
-        const uri = buildPipelineScriptUri(instanceId, jobFullName);
+        const uri = buildJobSummaryUri(instanceId, jobFullName);
         const doc = await vscode.workspace.openTextDocument(uri);
         await vscode.window.showTextDocument(doc, { preview: false });
         try {
-          await vscode.languages.setTextDocumentLanguage(doc, 'groovy');
+          await vscode.languages.setTextDocumentLanguage(doc, 'markdown');
         } catch {
           // ignore
         }
@@ -506,6 +586,7 @@ export function activate(context: vscode.ExtensionContext): void {
     configManager,
     clientPool,
     jobsTreeProvider,
+    statusBar,
     log
   });
 

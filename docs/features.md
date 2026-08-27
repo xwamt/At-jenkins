@@ -17,8 +17,8 @@ AT Jenkins brings Jenkins CI/CD controller navigation, job inspection, build log
   - **Username and Password**: User account credentials with automatic CSRF Crumb fetching and caching (supports Jenkins 2.x `DefaultCrumbIssuer`).
 - **Encrypted Credential Storage**: Sensitive API tokens and passwords are stored exclusively in VS Code's native `SecretStorage`, never written to plaintext settings or disk configs.
 - **TLS Trust-On-First-Use (TOFU)**: HTTPS connections to controllers with self-signed or private CA certificates prompt a certificate fingerprint confirmation dialog and record its SHA-256 fingerprint. Any subsequent fingerprint change blocks the connection and displays a security warning to prevent machine-in-the-middle attacks.
-- **Read-Only Controller Mode (`readOnly`)**: Mark sensitive production controllers as read-only. UI actions for triggering/stopping builds and saving pipeline scripts are hidden or disabled, and runtime requests are hard-blocked with `ReadOnly` error interception.
-- **Agent Background Access Gate (`allowBackgroundAccess`)**: Each controller instance has an independent "Allow Agent background access" toggle (default off). Only controllers with this toggle enabled are visible to, and callable by, AI Agents via MCP.
+- **Read-Only Controller Mode (`readOnly`)**: Mark sensitive production controllers as read-only. Trigger/stop/save actions remain visible but refuse at runtime (user message + `ReadOnly` hard-block in the client).
+- **Agent Background Access Gate (`allowBackgroundAccess`)**: Each controller instance has an independent "Allow Agent background access" toggle (default off). Controllers without the toggle still appear in jenkins_list_instances (with flags); other jenkins_* tools require the toggle.
 - **Test Connection**: The instance configuration form provides a "Test Connection" button that validates network reachability, TLS verification, and authentication before saving.
 
 ---
@@ -41,12 +41,12 @@ AT Jenkins brings Jenkins CI/CD controller navigation, job inspection, build log
 
 ## Virtual Documents & Editors
 
-- **Pipeline Script Editor (`jenkins:` Scheme)**:
-  - Opens controller-stored CPS Pipeline scripts via virtual document URI (`jenkins://<instance>/pipeline/<job>.groovy`).
+- **Pipeline Script Editor (`at-jenkins:` Scheme)**:
+  - Opens controller-stored CPS Pipeline scripts via editable draft URI (`at-jenkins-draft://{instanceId}/Jenkinsfile?job={jobFullName}`).
   - Native Groovy syntax highlighting.
   - In-place editing and direct save (`Cmd+S` / `Ctrl+S`): modifying and saving the virtual document updates the pipeline script definition on the Jenkins controller (protected by read-only checks and a modal confirmation dialog).
-- **Live Build Console Logs (`jenkins:` Scheme)**:
-  - Opens build console logs via virtual document URI (`jenkins://<instance>/build-log/<job>/<number>.log`).
+- **Live Build Console Logs (`at-jenkins:` Scheme)**:
+  - Opens build console logs via virtual document URI (`at-jenkins://{instanceId}/{buildNumber}/consoleText?job={jobFullName}`).
   - Native Log syntax highlighting.
   - Progressive live auto-refresh: for running builds (`building: true`), automatically polls console output every 3 seconds and updates the document until completion.
   - Auto-cleanup: polling timers are automatically cancelled when the log tab is closed in the IDE.
@@ -77,36 +77,36 @@ AT Jenkins brings Jenkins CI/CD controller navigation, job inspection, build log
 Seven tools, all strictly `read-only` and auto-approved once the AT Series MCP configuration is installed — no per-tool approval prompts.
 
 1. **`jenkins_list_instances`**:
-   - Lists configured Jenkins controllers that have `allowBackgroundAccess: true`.
+   - Lists all configured Jenkins controllers with flags (including `allowBackgroundAccess`); other tools require the flag.
    - Never exposes API tokens, passwords, or secrets.
 2. **`jenkins_list_jobs`**:
    - Queries jobs for a controller.
-   - Accepts an optional `folder` parameter to list jobs within nested folders.
+   - Accepts an optional `folderFullName` parameter to list jobs within nested folders.
    - Returns job names, full names, types (`_class`), color/status, and `isFolder` indicators.
 3. **`jenkins_get_job`**:
-   - Retrieves full metadata for a specific job, including parameter definitions, builds summary, and health reports.
+   - Retrieves full metadata for a specific job, including parameter definitions and recent builds summary.
 4. **`jenkins_get_pipeline_script`**:
    - Retrieves the Groovy Pipeline script for controller-stored CPS Pipeline jobs.
 5. **`jenkins_list_builds`**:
    - Returns a paginated list of builds for a job (`limit`, `offset`).
    - Includes build numbers, status results, timestamps, durations, and building flags.
 6. **`jenkins_get_build`**:
-   - Retrieves detailed build information (result status, duration, timestamp, change sets, parameters used).
+   - Retrieves detailed build information (result status, duration, timestamp, and related build fields from the Remote API).
 7. **`jenkins_get_build_log`**:
    - Retrieves console log text for a specific build.
    - Defaults to tailing the last 64 KiB (`DEFAULT_LOG_TAIL_BYTES`).
-   - Accepts a `start` byte offset parameter for progressive chunk reading, returning continuation metadata (`hasMore`, `totalBytes`, `nextStartByte`).
+   - Accepts a `start` byte offset for progressive chunk reading, returning continuation metadata (`hasMore`, `totalBytes`, `startByte`, `endByte`, `truncated`).
 
 ### Security Boundaries & Hard Exclusions
 - **No Write Tools in MCP**: MCP does not provide tools to trigger builds, stop builds, delete jobs, or modify scripts. All mutating operations remain user-driven via IDE UI.
-- **Background Access Gate**: Unchecked controllers cannot be discovered or accessed by Agents.
+- **Background Access Gate**: Controllers with `allowBackgroundAccess` off still appear in `jenkins_list_instances` (with flags); other `jenkins_*` tools refuse access until the flag is enabled.
 - **Redaction**: All logger outputs and error responses automatically redact tokens, cookies, and passwords.
 
 ---
 
 ## Hub / IDE Integration
 
-- **AT Jenkins: Install/Repair AT Series MCP Config** manages the single shared `AT Series` MCP entry (Cursor, Kiro, Continue) used by all AT-family plugins — installing AT Jenkins never creates a second, plugin-specific MCP server entry.
+- On activation, AT Jenkins installs/repairs the single shared `AT Series` MCP entry (Cursor, Kiro, Continue) used by all AT-family plugins — installing AT Jenkins never creates a second, plugin-specific MCP server entry.
 - **Shared Bridge Protocol**: Communicates with `@at-series/mcp-hub` via local loopback bridge service (`127.0.0.1`).
 
 ---

@@ -52,7 +52,8 @@ export const jenkinsGetBuildLogSchema = z
     instanceId: z.string().min(1),
     jobFullName: z.string().min(1),
     buildNumber: z.number().int().positive(),
-    tailBytes: z.number().int().nonnegative().optional(),
+    /** Default 64 KiB; hard-capped at 256 KiB by the agent service. */
+    tailBytes: z.number().int().nonnegative().max(256 * 1024).optional(),
     start: z.number().int().nonnegative().optional()
   })
   .strict();

@@ -213,6 +213,15 @@ export class JenkinsInstanceConfigManager {
     if (secrets.password !== undefined && secrets.password !== '') {
       await this.secrets.store(this.passwordKey(instance.id), secrets.password);
     }
+
+    // Drop secrets that no longer apply to the active auth mode so mode
+    // switches do not leave orphan credentials in SecretStorage.
+    if (instance.authMode !== 'apiToken') {
+      await this.secrets.delete(this.apiTokenKey(instance.id));
+    }
+    if (instance.authMode !== 'password') {
+      await this.secrets.delete(this.passwordKey(instance.id));
+    }
   }
 }
 

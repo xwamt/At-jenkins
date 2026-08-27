@@ -22,6 +22,7 @@ describe('buildCommands', () => {
   let mockClient: {
     config: JenkinsInstanceConfig;
     getJob: ReturnType<typeof vi.fn>;
+    getBuild: ReturnType<typeof vi.fn>;
     triggerBuild: ReturnType<typeof vi.fn>;
     stopBuild: ReturnType<typeof vi.fn>;
   };
@@ -55,6 +56,14 @@ describe('buildCommands', () => {
     mockClient = {
       config: { ...instanceConfig },
       getJob: vi.fn(),
+      getBuild: vi.fn().mockResolvedValue({
+        number: 42,
+        building: true,
+        result: null,
+        url: 'https://jenkins.example.com/job/x/42/',
+        timestamp: Date.now(),
+        duration: 0
+      }),
       triggerBuild: vi.fn(),
       stopBuild: vi.fn()
     };
@@ -129,7 +138,8 @@ describe('buildCommands', () => {
       );
       expect(mockClient.triggerBuild).toHaveBeenCalledWith('deploy-app', undefined);
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-        expect.stringContaining('deploy-app')
+        expect.stringContaining('deploy-app'),
+        expect.anything()
       );
       expect(mockJobsTreeProvider.refresh).toHaveBeenCalledWith();
     });
@@ -213,7 +223,39 @@ describe('buildCommands', () => {
         AUTH_SECRET: 'my-secret-pw'
       });
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
-        expect.stringContaining('release-job')
+        expect.stringContaining('release-job'),
+        expect.anything()
+      );
+    });
+
+    it('uses previous parameters as default values on subsequent trigger for the same job', async () => {
+      const paramJobDetail: JobDetail = {
+        name: 'param-memory-job',
+        fullName: 'param-memory-job',
+        url: 'https://jenkins.example.com/job/param-memory-job',
+        parameters: [
+          {
+            name: 'BRANCH',
+            type: 'StringParameterDefinition',
+            defaultValue: 'main',
+            description: 'Git branch'
+          }
+        ]
+      };
+
+      mockClient.getJob.mockResolvedValue(paramJobDetail);
+      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Trigger Build') as never);
+
+      // First run: enter 'feature/login'
+      const inputSpy = vi.spyOn(vscode.window, 'showInputBox').mockResolvedValueOnce('feature/login' as never);
+      await triggerBuildHandler(context, 'param-memory-job');
+
+      // Second run: verify prompt defaults to 'feature/login'
+      await triggerBuildHandler(context, 'param-memory-job');
+      expect(inputSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          value: 'feature/login'
+        })
       );
     });
 

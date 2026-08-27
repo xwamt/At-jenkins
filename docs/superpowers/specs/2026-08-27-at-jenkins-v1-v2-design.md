@@ -17,6 +17,28 @@
 
 MCP 在两个版本中都保持锁定的 7 个只读工具（D3 / D14），任何写能力或新工具均不在本规格范围内。
 
+**配套计划（实施时按此顺序读）：**
+
+1. 本规格（决策与范围）
+2. [`../plans/2026-08-27-at-jenkins-engineering.md`](../plans/2026-08-27-at-jenkins-engineering.md)（DoD / CI / 安全 / i18n）
+3. [`../plans/2026-08-27-at-jenkins-v1.md`](../plans/2026-08-27-at-jenkins-v1.md)（0.2.0 任务）
+4. [`../plans/2026-08-27-at-jenkins-v2.md`](../plans/2026-08-27-at-jenkins-v2.md)（0.3.0 任务，依赖 v1 完成）
+
+**规范命令与环境变量（与实现计划对齐，实施时不得再改名）：**
+
+| 用途 | 规范 ID |
+|---|---|
+| 忘记已信任证书 | `atJenkins.forgetTrustedCertificate` |
+| 停止跟随日志 | `atJenkins.stopFollowingBuildLog` |
+| 跳转到任务 | `atJenkins.searchJobs`（标题 “Go to Job…”） |
+| 取消排队项 | `atJenkins.cancelQueueItem` |
+| 下载产物 | `atJenkins.downloadArtifact` |
+| 用上次参数重建 | `atJenkins.rebuildBuild` |
+| 关注 / 置顶 | `atJenkins.watchJob` / `unwatchJob` / `pinJob` / `unpinJob` |
+| 真实 Jenkins 集成测试 | `AT_JENKINS_TEST_URL` / `AT_JENKINS_TEST_USER` / `AT_JENKINS_TEST_TOKEN`（可选 `AT_JENKINS_TEST_JOB`） |
+
+v2 跳转到任务打开 Job Summary，不要求实现 `TreeView.reveal`（`JobsTreeProvider` 当前无 `getParent`）。阶段信息走 hover/summary 懒加载；不做 `atJenkins.showStageSummary` 独立命令，除非后续修订本表。
+
 ---
 
 ## 1. Goal
@@ -48,7 +70,7 @@ D1–D18 stay as written in the 2026-08-25 spec. Addenda below are numbered A1+ 
 | A3 | v1 | Instance config parsing is per-entry `safeParse`: a corrupt entry is skipped with a warning, never bricks the rest, and is preserved in storage rather than silently deleted. `verifyTls` defaults to `true` when absent. | D15, D18 |
 | A4 | v1 | `JenkinsHttpClient` follows same-origin GET/HEAD 3xx (≤ 5 hops); any redirect to a login page raises `AuthError`; `requestJson` throws on empty/204 bodies instead of returning `undefined`. | D4 |
 | A5 | v1 | Parameter types the extension cannot collect (File / Run / credentials) refuse the trigger with an “Open in Jenkins” action instead of sending a wrong payload. Text (multiline) parameters get a minimal editor-based input. | D1 |
-| A6 | v1 | TLS lifecycle: `atJenkins.forgetCertificate` command; concurrent TOFU prompts for the same `host:port` are coalesced into one modal; configuring `apiToken`/`password` on an `http:` baseUrl warns (non-blocking). | D15 |
+| A6 | v1 | TLS lifecycle: `atJenkins.forgetTrustedCertificate` command; concurrent TOFU prompts for the same `host:port` are coalesced into one modal; configuring `apiToken`/`password` on an `http:` baseUrl warns (non-blocking). | D15 |
 | A7 | v1 | Status bar and follow service support **concurrent** build follows keyed per build; completion toasts are never dropped. `atJenkins.*` settings live-reload via `onDidChangeConfiguration`. | D8 |
 | A8 | v1 | MCP `jenkins_get_build` uses a bounded `tree=` selector and scrubs password-like parameter values from results. The tool set stays **exactly** D14’s seven read-only tools. | D3, D14 |
 | A9 | v1 | `openInJenkins` compares the resolved URL host against the configured instance `baseUrl` host; on mismatch it asks for confirmation before `openExternal`. | — |
@@ -57,7 +79,7 @@ D1–D18 stay as written in the 2026-08-25 spec. Addenda below are numbered A1+ 
 | A12 | v2 | Build artifacts are **UI-only** (list + download). MCP artifact tools would amend D14 and are out of v2. | D14 |
 | A13 | v2 | Pipeline stage insight ships as a **textual summary** via the `wfapi` endpoint. The stage-timeline webview stays deferred. | D8 |
 | A14 | v2 | Watch and pinned-job state persists in `globalState` (`atJenkins.watchedJobs`, `atJenkins.pinnedJobs`); rendering is scoped to the active instance. | D6 |
-| A15 | v2 | Live Jenkins integration tests are opt-in via explicit `AT_JENKINS_LIVE_*` env vars and never run in default CI. | §9 (2026-08-25) |
+| A15 | v2 | Live Jenkins integration tests are opt-in via explicit `AT_JENKINS_TEST_*` env vars and never run in default CI. | §9 (2026-08-25) |
 
 ---
 
@@ -77,7 +99,7 @@ No new top-level modules; D18’s layout stays. Invasiveness is labeled **small 
 | Log follow | `src/document/BuildLogDocumentProvider.ts`, new `src/commands/followRegistry.ts`, `src/commands/buildFollow.ts` | Per-build Output channel + registry (dedupe), stop command, non-quadratic progressive reads, UTF-8-safe appends (§5, §6). | medium |
 | UTF-8 slicing | `src/jenkins/logTruncate.ts` | New `alignUtf8Start(buf, offset)` helper skips continuation bytes (`0b10xxxxxx`) so byte-offset slices never start mid-character; follow loop uses a streaming `TextDecoder('utf-8', { stream: true })` per session so chunk boundaries never split characters. | small |
 | Parameters | `src/commands/buildCommands.ts` | Unsupported-type refusal + Text multiline flow (§6). | small |
-| TLS lifecycle | `src/jenkins/createInteractiveCertVerifier.ts`, new `src/commands/certCommands.ts` | Prompt coalescing map; `atJenkins.forgetCertificate` over `JenkinsCertTrustStore.getAllTrusted()`. | small |
+| TLS lifecycle | `src/jenkins/createInteractiveCertVerifier.ts`, new `src/commands/certCommands.ts` | Prompt coalescing map; `atJenkins.forgetTrustedCertificate` over `JenkinsCertTrustStore.getAllTrusted()`. | small |
 | http+creds warning | `src/webview/JenkinsInstancePanel.ts` (save path) | Non-blocking warning when `baseUrl` is `http:` and `authMode !== 'none'`. | small |
 | Status bar | `src/utils/statusBar.ts`, `src/commands/buildFollow.ts` | `Map`-keyed concurrent follows; drop the single-slot `followGeneration` invalidation (§6). | medium |
 | Settings reload | `src/extension.ts`, `src/config/settings.ts` | `onDidChangeConfiguration('atJenkins')` → consumers read settings through a getter instead of an activation-time snapshot. | small |
@@ -91,7 +113,7 @@ No new top-level modules; D18’s layout stays. Invasiveness is labeled **small 
 
 | Area | File(s) | Delta | Invasiveness |
 |---|---|---|---|
-| Go to Job | new `src/commands/goToJob.ts`, `src/tree/JobsTreeProvider.ts` | QuickPick over a cached recursive job walk of the **active instance only** (D6); reveal-in-tree requires implementing `getParent` on `JobsTreeProvider`. | medium |
+| Go to Job | new `src/commands/searchJobs.ts` | `atJenkins.searchJobs` QuickPick over a cached recursive job walk of the **active instance only** (D6); pick opens Job Summary (no `getParent` / `reveal` required). | medium |
 | Queue | `src/jenkins/JenkinsClient.ts`, `src/tree/JobsTreeProvider.ts`, `src/commands/buildCommands.ts` | `getQueueItemsForJob` (`GET /queue/api/json?tree=items[id,why,inQueueSince,stuck,task[name,url]]`, filtered by job URL), `cancelQueueItem(id)` (`POST /queue/cancelItem?id=<id>`, `ReadOnly` guard); queued pseudo-node with `why` as description. | medium |
 | Artifacts | `src/jenkins/JenkinsHttpClient.ts`, new `src/commands/artifacts.ts`, `src/tree/JobsTreeProvider.ts` | Streaming `downloadToFile(req, destPath)` on the HTTP client (current client buffers whole bodies — required for large artifacts); artifacts children under completed builds; download via `showSaveDialog`. | medium |
 | Rebuild | new `src/commands/rebuild.ts` | Fetch prior parameters from `getBuild` `actions[parameters[name,value]]`; masked/password values re-prompted; unsupported types refused as in v1; confirm shows the parameter table; then `triggerBuild`. | small |
@@ -193,7 +215,7 @@ All existing `atJenkins.*` keys become live-reloadable in v1 (A7); no key is ren
 
 **TLS (A6).**
 
-- **`atJenkins.forgetCertificate`**: QuickPick over trusted fingerprints (`host:port`, description = fingerprint + trusted date) → confirm → `JenkinsCertTrustStore.untrust`. Registered in `src/commands/certCommands.ts`, contributed to the command palette.
+- **`atJenkins.forgetTrustedCertificate`**: QuickPick over trusted fingerprints (`host:port`, description = fingerprint + trusted date) → confirm → `JenkinsCertTrustStore.untrust`. Registered in `src/commands/certCommands.ts`, contributed to the command palette.
 - TOFU prompt coalescing: `createInteractiveCertVerifier` keeps `Map<'host:port', Promise<boolean>>`; concurrent verifications for the same endpoint await one modal; the entry clears on settle.
 - Instance save with `http:` + `apiToken`/`password` → one warning toast (*credentials will transit in cleartext*), never a block.
 
@@ -207,13 +229,13 @@ All existing `atJenkins.*` keys become live-reloadable in v1 (A7); no key is ren
 
 | Command | Surface | Behavior |
 |---|---|---|
-| `atJenkins.goToJob` | palette + Jobs view title | QuickPick over the active instance’s job list (recursive walk, cached, cancellable); select → `TreeView.reveal` + optional job summary. Active instance only (D6). |
+| `atJenkins.searchJobs` | palette + Jobs view title | Title “Go to Job…”. QuickPick over the active instance’s job list (recursive walk, cached, cancellable); select → `atJenkins.openJobSummary`. Active instance only (D6). |
 | `atJenkins.cancelQueueItem` | queued node context | Confirm modal → `cancelQueueItem(id)`; blocked by `readOnly` (A11). Queued node id: `queue:<jobFullName>:<queueId>`, description = queue `why`. |
 | `atJenkins.downloadArtifact` | artifact node context | `showSaveDialog` → streamed download → toast with “Open File / Reveal”. Artifact node id: `artifact:<jobFullName>#<n>:<relativePath>`. |
 | `atJenkins.rebuildBuild` | build node context | Prior parameters pre-filled; masked password values re-prompted; unsupported types refused; confirm lists name=value pairs; triggers and follows like a normal trigger. |
 | `atJenkins.watchJob` / `atJenkins.unwatchJob` | job node context | Toggle membership in `atJenkins.watchedJobs`; watched jobs get an eye badge; `JobWatchService` polls at `atJenkins.watch.pollIntervalMs` and raises the existing completion notification on building→finished. Opt-in, in-IDE only. |
 | `atJenkins.pinJob` / `atJenkins.unpinJob` | job node context | Toggle `atJenkins.pinnedJobs`; “Pinned” virtual section at the top of the Jobs tree for the active instance. |
-| `atJenkins.showStageSummary` | build node context | Read-only virtual document: aligned text table of stage name / status / duration from `wfapi/describe`; `Unsupported` toast when the plugin endpoint is missing. **Not** a webview (A13, D8 deferred). |
+| *(no dedicated command)* | build hover / job summary | Textual `wfapi` stage table and JUnit counts, lazy on hover; hide when the plugin/report is absent. **Not** a webview (A13, D8 deferred). |
 
 SCM-backed Pipeline jobs additionally render a read-only definition summary (SCM class, remote — userinfo stripped, branches, script path, lightweight flag) inside the existing job summary document. JUnit counts (`✔ pass ✘ fail ➖ skip`) appear on build tree items and in the job summary.
 
@@ -252,7 +274,7 @@ The 2026-08-25 error table stays; one row is added and one is clarified:
 - v1 Bridge tests: `jenkins_get_build` response carries the bounded tree and redacted values; still asserts no secret/cookie leakage.
 - **CI (v1):** `.github/workflows/ci.yml` — Node LTS, `npm ci`, `npm run typecheck`, `npm test`, `npm run compile`; VSIX packaging as an artifact step (non-publishing).
 - v2 unit coverage: queue path parsing/filtering + `ReadOnly` guard on cancel; artifact download streaming (temp-file target, size mismatch abort); rebuild parameter extraction incl. masked-password re-prompt; `wfapi` 404 → `Unsupported`; watch service transition detection with fake timers; pinned/watched persistence round-trips.
-- **Live integration tests (v2, A15):** `test/integration/*.live.test.ts` behind `AT_JENKINS_LIVE_BASE_URL` / `AT_JENKINS_LIVE_USER` / `AT_JENKINS_LIVE_TOKEN`; whole suite skips when unset; run via `npm run test:live` (`vitest.live.config.ts`); never wired into default CI. Optional local harness: `test-fixtures/live/docker-compose.yml` (jenkins/jenkins:lts + JCasC-seeded jobs).
+- **Live integration tests (v2, A15):** `test/live/*.live.test.ts` behind `AT_JENKINS_TEST_URL` / `AT_JENKINS_TEST_USER` / `AT_JENKINS_TEST_TOKEN` (optional `AT_JENKINS_TEST_JOB`); whole suite skips when unset; never wired into default CI. Optional local harness: `test-fixtures/live/docker-compose.yml` (jenkins/jenkins:lts + JCasC-seeded jobs).
 
 ---
 
@@ -267,7 +289,7 @@ No calendar estimates; sized by invasiveness.
 | **M6** | Config resilience (per-entry `safeParse`, `verifyTls` default, raw-array-preserving persist) + HTTP hardening (same-origin GET 3xx, login → `AuthError`, `requestJson` throw) | medium |
 | **M7** | Pipeline save safety: publish-in-`writeFile`, `Conflict` error, Overwrite/Diff/Cancel, cancel-keeps-dirty | medium |
 | **M8** | Log follow UX: per-build channels + registry + `atJenkins.stopFollowingBuildLog`, non-quadratic progressive reads with soft cap, UTF-8-safe slicing | medium |
-| **M9** | Parameters (unsupported-type refusal, Text multiline), TLS lifecycle (`atJenkins.forgetCertificate`, prompt coalescing, http+creds warning), concurrent status-bar follows, settings live-reload | medium |
+| **M9** | Parameters (unsupported-type refusal, Text multiline), TLS lifecycle (`atJenkins.forgetTrustedCertificate`, prompt coalescing, http+creds warning), concurrent status-bar follows, settings live-reload | medium |
 | **M10** | Engineering & packaging: CI workflow, `GET_BUILD_TREE` + MCP scrub, openInJenkins host check, i18n leftovers, README en/zh, vsce flag cleanup, **publisher release-gate doc** | small |
 
 ### v2 → 0.3.0

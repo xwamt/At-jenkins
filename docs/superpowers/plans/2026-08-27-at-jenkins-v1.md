@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript 5.x strict, vitest (`test-fixtures/vscode.ts` mock + `test/jenkins/testHttpServer.ts` real HTTP fixture), zod, esbuild, `@at-series/mcp-hub`, VS Code `^1.85.0`, `vscode.l10n`.
 
-**Spec:** `docs/superpowers/specs/2026-08-27-at-jenkins-v1-v2-design.md` (being written by a sibling agent; this plan is authored against the frozen v1 scope and does not depend on that file existing yet). Design decisions **D1–D18 from `docs/superpowers/specs/2026-08-25-at-jenkins-design.md` are locked** — nothing here may contradict them.
+**Spec:** `docs/superpowers/specs/2026-08-27-at-jenkins-v1-v2-design.md` (addenda A1–A10). Design decisions **D1–D18 from `docs/superpowers/specs/2026-08-25-at-jenkins-design.md` are locked** — nothing here may contradict them. **Contract:** `docs/superpowers/plans/2026-08-27-at-jenkins-engineering.md`.
 
 **TDD:** Every task writes a failing test first, watches RED, then implements. Commits use HEREDOC. Never update git config. Never skip hooks.
 

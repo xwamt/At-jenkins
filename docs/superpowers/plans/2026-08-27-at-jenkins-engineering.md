@@ -159,10 +159,12 @@ The machinery in `test/i18n/nls.test.ts` enforces most of this mechanically; the
 
 ### Opt-in live suite (never in CI)
 
-- Gated by environment variables; when unset, the suite is skipped entirely (`describe.skipIf`), so `npm test` stays green offline. Proposed variables (define them in the v1 task that adds the suite; keep this contract updated if names differ):
-  - `AT_JENKINS_LIVE_BASE_URL`
-  - `AT_JENKINS_LIVE_USERNAME`
-  - `AT_JENKINS_LIVE_API_TOKEN` (and/or `AT_JENKINS_LIVE_PASSWORD` for the crumb path)
+- Gated by environment variables; when unset, the suite is skipped entirely (`describe.skipIf`), so `npm test` stays green offline. Canonical names (v2 plan Task 10):
+  - `AT_JENKINS_TEST_URL`
+  - `AT_JENKINS_TEST_USER`
+  - `AT_JENKINS_TEST_TOKEN`
+  - optional `AT_JENKINS_TEST_JOB` (known job fullName for deeper read-only checks)
+- Password+crumb live path may reuse the same user/token pair; do not add extra env names.
 - What the live suite covers — the things mocks can't prove:
   - Real auth handshakes: API-token Basic auth, password + crumbIssuer + session-cookie binding, `none` against an open controller.
   - `logText/progressiveText` semantics (`X-Text-Size`, `start`, `X-More-Data`) across the Jenkins LTS versions we claim (D12), and the `consoleText` fallback on controllers where progressive is unavailable.

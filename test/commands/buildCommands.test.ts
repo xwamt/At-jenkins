@@ -135,8 +135,7 @@ describe('buildCommands', () => {
       expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
         expect.stringContaining('deploy-app'),
         { modal: true },
-        t('Trigger Build'),
-        t('Cancel')
+        t('Trigger Build')
       );
       expect(mockClient.triggerBuild).toHaveBeenCalledWith('deploy-app', undefined);
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
@@ -149,7 +148,7 @@ describe('buildCommands', () => {
 
     it('aborts trigger if user declines confirmation', async () => {
       mockClient.getJob.mockResolvedValue(simpleJobDetail);
-      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Cancel') as never);
+      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined as never);
 
       const result = await triggerBuildHandler(context, 'deploy-app');
 
@@ -395,8 +394,7 @@ describe('buildCommands', () => {
       expect(vscode.window.showWarningMessage).toHaveBeenCalledWith(
         expect.stringContaining('#42'),
         { modal: true },
-        t('Stop Build'),
-        t('Cancel')
+        t('Stop Build')
       );
       expect(mockClient.stopBuild).toHaveBeenCalledWith('deploy-app', 42);
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
@@ -407,7 +405,7 @@ describe('buildCommands', () => {
 
     it('aborts stop if user declines confirmation', async () => {
       const treeItem = new JenkinsBuildTreeItem(buildSummary, 'deploy-app', 'inst-1');
-      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Cancel') as never);
+      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined as never);
 
       const result = await stopBuildHandler(context, treeItem);
 

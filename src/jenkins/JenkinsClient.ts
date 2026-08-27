@@ -380,18 +380,20 @@ export class JenkinsClient {
     const end = limit !== undefined ? offset + Math.max(0, limit) : undefined;
     const range = end !== undefined ? `{0,${end}}` : '';
 
+    const collection = end !== undefined && end > 100 ? 'allBuilds' : 'builds';
+
     const res = await this.authenticator.withAuthRetry(async (headers) => {
-      return this.httpClient.requestJson<{ builds?: BuildSummary[] }>({
+      return this.httpClient.requestJson<{ builds?: BuildSummary[]; allBuilds?: BuildSummary[] }>({
         method: 'GET',
         path,
         query: {
-          tree: `builds[${BUILD_SUMMARY_TREE_FIELDS}]${range}`
+          tree: `${collection}[${BUILD_SUMMARY_TREE_FIELDS}]${range}`
         },
         headers
       });
     }, 'GET');
 
-    const builds = (res?.builds ?? []).map((build) => normalizeBuildSummary(build)).filter(
+    const builds = (res?.[collection] ?? []).map((build) => normalizeBuildSummary(build)).filter(
       (build): build is BuildSummary => Boolean(build)
     );
     if (end !== undefined) {

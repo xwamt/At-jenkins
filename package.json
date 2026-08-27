@@ -52,96 +52,99 @@
     "commands": [
       {
         "command": "atJenkins.addInstance",
+        "category": "%atJenkins.displayName%",
         "title": "%atJenkins.command.addInstance.title%",
         "icon": "$(add)"
       },
       {
         "command": "atJenkins.editInstance",
         "title": "%atJenkins.command.editInstance.title%",
-        "icon": "$(edit)"
+        "icon": "$(edit)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.deleteInstance",
         "title": "%atJenkins.command.deleteInstance.title%",
-        "icon": "$(trash)"
+        "icon": "$(trash)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.testConnection",
         "title": "%atJenkins.command.testConnection.title%",
-        "icon": "$(debug-disconnect)"
+        "icon": "$(debug-disconnect)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.refreshInstances",
         "title": "%atJenkins.command.refreshInstances.title%",
-        "icon": "$(refresh)"
+        "icon": "$(refresh)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.setActiveInstance",
         "title": "%atJenkins.command.setActiveInstance.title%",
-        "icon": "$(check)"
+        "icon": "$(check)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.refreshJobs",
         "title": "%atJenkins.command.refreshJobs.title%",
-        "icon": "$(refresh)"
+        "icon": "$(refresh)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.loadMoreBuilds",
         "title": "%atJenkins.command.loadMoreBuilds.title%",
-        "icon": "$(more)"
+        "icon": "$(more)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.openPipelineScript",
         "title": "%atJenkins.command.openPipelineScript.title%",
-        "icon": "$(file-code)"
+        "icon": "$(file-code)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.openJobSummary",
         "title": "%atJenkins.command.openJobSummary.title%",
-        "icon": "$(info)"
+        "icon": "$(info)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.openBuildLog",
         "title": "%atJenkins.command.openBuildLog.title%",
-        "icon": "$(output)"
+        "icon": "$(output)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.triggerBuild",
         "title": "%atJenkins.command.triggerBuild.title%",
-        "icon": "$(play)"
+        "icon": "$(play)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.stopBuild",
         "title": "%atJenkins.command.stopBuild.title%",
-        "icon": "$(debug-stop)"
+        "icon": "$(debug-stop)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.followBuildLogInOutput",
         "title": "%atJenkins.command.followBuildLogInOutput.title%",
-        "icon": "$(terminal)"
+        "icon": "$(terminal)",
+        "category": "%atJenkins.displayName%"
       },
       {
         "command": "atJenkins.openInJenkins",
         "title": "%atJenkins.command.openInJenkins.title%",
-        "icon": "$(link-external)"
+        "icon": "$(link-external)",
+        "category": "%atJenkins.displayName%"
       }
     ],
     "menus": {
       "commandPalette": [
         {
-          "command": "atJenkins.editInstance",
-          "when": "false"
-        },
-        {
-          "command": "atJenkins.deleteInstance",
-          "when": "false"
-        },
-        {
-          "command": "atJenkins.testConnection",
-          "when": "false"
-        },
-        {
-          "command": "atJenkins.setActiveInstance",
+          "command": "atJenkins.openJobSummary",
           "when": "false"
         },
         {
@@ -249,7 +252,7 @@
         },
         {
           "command": "atJenkins.openInJenkins",
-          "when": "view == atJenkins.jobs && (viewItem == jenkinsFolder || viewItem == jenkinsJob || viewItem =~ /^jenkinsJob\\./ || viewItem == jenkinsBuild || viewItem =~ /^jenkinsBuild\\./)",
+          "when": "view == atJenkins.jobs && (viewItem =~ /^jenkinsFolder/ || viewItem == jenkinsJob || viewItem =~ /^jenkinsJob\\./ || viewItem == jenkinsBuild || viewItem =~ /^jenkinsBuild\\./)",
           "group": "atJenkins.action@2"
         }
       ],

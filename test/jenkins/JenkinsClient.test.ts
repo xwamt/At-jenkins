@@ -655,6 +655,18 @@ describe('JenkinsClient API operations', () => {
       expect(paged.map((b) => b.number)).toEqual([4, 3]);
     });
 
+    it('listBuilds uses allBuilds once the window exceeds Jenkins default 100', async () => {
+      const httpClient = createMockHttpClient(async (req) => {
+        expect(String(req.query?.tree)).toContain('allBuilds[');
+        expect(String(req.query?.tree)).toContain('{0,120}');
+        return { text: JSON.stringify({ allBuilds: [{ number: 1, result: 'SUCCESS', building: false, timestamp: 1, duration: 1, url: '' }] }) };
+      });
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+      const paged = await client.listBuilds('app', { offset: 0, limit: 120 });
+      expect(paged).toHaveLength(1);
+    });
+
     it('getQueueItem polls the queue item JSON API', async () => {
       const httpClient = createMockHttpClient(async (req) => {
         expect(req.path).toBe('/queue/item/77/api/json');

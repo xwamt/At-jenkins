@@ -15,16 +15,19 @@ describe('JenkinsAuthenticator', () => {
       expect(applied).toEqual({ 'content-type': 'application/json' });
     });
 
-    it('does not attempt to fetch crumb on mutating methods', async () => {
-      const requestJson = vi.fn();
+    it('fetches a crumb for anonymous POSTs when CSRF is enabled', async () => {
+      const requestJson = vi.fn().mockResolvedValue({
+        crumb: 'anon-crumb',
+        crumbRequestField: 'Jenkins-Crumb'
+      });
       const auth = new JenkinsAuthenticator({
         authMode: 'none',
         httpClient: { requestJson }
       });
 
       const headers = await auth.getAuthHeaders('POST');
-      expect(headers).toEqual({});
-      expect(requestJson).not.toHaveBeenCalled();
+      expect(headers).toEqual({ 'Jenkins-Crumb': 'anon-crumb' });
+      expect(requestJson).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -98,6 +101,29 @@ describe('JenkinsAuthenticator', () => {
       expect(headers).toEqual({
         authorization: `Basic ${expectedToken}`
       });
+      expect(requestJson).not.toHaveBeenCalled();
+    });
+
+    it('attaches the crumb session cookie from Set-Cookie when request() is available', async () => {
+      const request = vi.fn().mockResolvedValue({
+        status: 200,
+        ok: true,
+        headers: {},
+        body: Buffer.from('{}'),
+        text: JSON.stringify({ crumb: 'bound-crumb', crumbRequestField: 'Jenkins-Crumb' }),
+        setCookies: ['JSESSIONID=sess-1; Path=/; HttpOnly']
+      });
+      const requestJson = vi.fn();
+      const auth = new JenkinsAuthenticator({
+        authMode: 'password',
+        username: 'bob',
+        secret: 'secret123',
+        httpClient: { requestJson, request }
+      });
+
+      const headers = await auth.getAuthHeaders('POST');
+      expect(headers['Jenkins-Crumb']).toBe('bound-crumb');
+      expect(headers.cookie).toBe('JSESSIONID=sess-1');
       expect(requestJson).not.toHaveBeenCalled();
     });
 
@@ -401,13 +427,15 @@ describe('JenkinsAuthenticator', () => {
         if (req.url === '/crumbIssuer/api/json' && req.method === 'GET') {
           crumbIssued = true;
           res.setHeader('content-type', 'application/json');
+          res.setHeader('set-cookie', 'JSESSIONID=abc123; Path=/; HttpOnly');
           res.end(JSON.stringify({ crumb: 'server-crumb-999', crumbRequestField: 'Jenkins-Crumb' }));
           return;
         }
 
         if (req.url === '/job/demo/build' && req.method === 'POST') {
           const crumb = req.headers['jenkins-crumb'];
-          if (crumb !== 'server-crumb-999') {
+          const cookie = String(req.headers.cookie ?? '');
+          if (crumb !== 'server-crumb-999' || !cookie.includes('JSESSIONID=abc123')) {
             res.statusCode = 403;
             res.end('No valid crumb');
             return;

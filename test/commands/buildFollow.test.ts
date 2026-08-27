@@ -25,6 +25,7 @@ describe('notifyBuildCompletion', () => {
       'Open in Jenkins'
     );
     expect(execSpy).toHaveBeenCalledWith('atJenkins.openBuildLog', {
+      instanceId: undefined,
       jobFullName: 'app',
       buildNumber: 7
     });

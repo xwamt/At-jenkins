@@ -1,10 +1,11 @@
 import type { JenkinsAuthMode } from '../config/schema';
 import { AuthError, NotFound } from './errors';
-import type { JenkinsHttpClient, JenkinsHttpRequest } from './JenkinsHttpClient';
+import type { JenkinsHttpClient, JenkinsHttpRequest, JenkinsHttpResponse } from './JenkinsHttpClient';
 
 export interface JenkinsCrumb {
   crumb: string;
   crumbRequestField: string;
+  cookie?: string;
 }
 
 export interface JenkinsCrumbResponse {
@@ -14,9 +15,10 @@ export interface JenkinsCrumbResponse {
 }
 
 export type JenkinsAuthHttpClient =
-  | Pick<JenkinsHttpClient, 'requestJson'>
+  | Pick<JenkinsHttpClient, 'requestJson' | 'request'>
   | {
       requestJson<T>(req: JenkinsHttpRequest): Promise<T>;
+      request?(req: JenkinsHttpRequest): Promise<JenkinsHttpResponse>;
     };
 
 export interface JenkinsAuthOptions {
@@ -61,10 +63,13 @@ export class JenkinsAuthenticator {
       headers['authorization'] = basicAuth;
     }
 
-    if (this.authMode === 'password' && isMutatingMethod(method)) {
+    if ((this.authMode === 'password' || this.authMode === 'none') && isMutatingMethod(method)) {
       const crumb = await this.getCrumb();
       if (crumb) {
         headers[crumb.crumbRequestField] = crumb.crumb;
+        if (crumb.cookie) {
+          headers.cookie = crumb.cookie;
+        }
       }
     }
 
@@ -99,7 +104,10 @@ export class JenkinsAuthenticator {
     try {
       return await action(headers);
     } catch (error: unknown) {
-      if (this.authMode === 'password' && isAuthErrorOrUnauthorized(error)) {
+      if (
+        (this.authMode === 'password' || this.authMode === 'none') &&
+        isAuthErrorOrUnauthorized(error)
+      ) {
         this.clearCrumb();
         const retryHeaders = await this.applyAuth({}, method);
         return await action(retryHeaders);
@@ -112,7 +120,7 @@ export class JenkinsAuthenticator {
    * Retrieves or fetches the CSRF crumb for password auth mode.
    */
   private async getCrumb(): Promise<JenkinsCrumb | undefined> {
-    if (this.authMode !== 'password' || this.isCrumbDisabled) {
+    if ((this.authMode !== 'password' && this.authMode !== 'none') || this.isCrumbDisabled) {
       return undefined;
     }
 
@@ -138,18 +146,32 @@ export class JenkinsAuthenticator {
   private async fetchCrumb(): Promise<JenkinsCrumb | null> {
     const basicAuth = this.getBasicAuthHeader();
     const headers: Record<string, string> = basicAuth ? { authorization: basicAuth } : {};
+    const req: JenkinsHttpRequest = {
+      method: 'GET',
+      path: 'crumbIssuer/api/json',
+      headers
+    };
 
     try {
-      const response = await this.httpClient!.requestJson<JenkinsCrumbResponse>({
-        method: 'GET',
-        path: 'crumbIssuer/api/json',
-        headers
-      });
+      const client = this.httpClient!;
+      let payload: JenkinsCrumbResponse | undefined;
+      let setCookies: string[] = [];
 
-      if (response && typeof response.crumb === 'string') {
+      if (typeof client.request === 'function') {
+        const response = await client.request(req);
+        setCookies = response.setCookies ?? [];
+        if (response.text.trim()) {
+          payload = JSON.parse(response.text) as JenkinsCrumbResponse;
+        }
+      } else {
+        payload = await client.requestJson<JenkinsCrumbResponse>(req);
+      }
+
+      if (payload && typeof payload.crumb === 'string') {
         return {
-          crumb: response.crumb,
-          crumbRequestField: response.crumbRequestField || 'Jenkins-Crumb'
+          crumb: payload.crumb,
+          crumbRequestField: payload.crumbRequestField || 'Jenkins-Crumb',
+          cookie: extractSessionCookie(setCookies)
         };
       }
       return null;
@@ -171,6 +193,20 @@ export class JenkinsAuthenticator {
     const credentials = Buffer.from(`${username}:${secret}`, 'utf8').toString('base64');
     return `Basic ${credentials}`;
   }
+}
+
+export function extractSessionCookie(setCookies: string[] | undefined): string | undefined {
+  if (!setCookies || setCookies.length === 0) {
+    return undefined;
+  }
+  const pairs: string[] = [];
+  for (const raw of setCookies) {
+    const pair = raw.split(';')[0]?.trim();
+    if (pair && /^JSESSIONID(?:\.\w+)?=/i.test(pair)) {
+      pairs.push(pair);
+    }
+  }
+  return pairs.length > 0 ? pairs.join('; ') : undefined;
 }
 
 function isMutatingMethod(method?: string): boolean {

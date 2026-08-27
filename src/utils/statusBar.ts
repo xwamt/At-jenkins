@@ -23,7 +23,12 @@ export class JenkinsStatusBarManager implements vscode.Disposable {
     }
   }
 
-  setBuildingStatus(jobFullName: string, buildNumber: number, durationText?: string): void {
+  setBuildingStatus(
+    jobFullName: string,
+    buildNumber: number,
+    durationText?: string,
+    instanceId?: string
+  ): void {
     this.isBuilding = true;
     const dur = durationText ? ` (${durationText})` : '';
     this.statusBarItem.text = `$(sync~spin) Jenkins: ${jobFullName} #${buildNumber}${dur}`;
@@ -34,7 +39,7 @@ export class JenkinsStatusBarManager implements vscode.Disposable {
     this.statusBarItem.command = {
       command: 'atJenkins.openBuildLog',
       title: t('Open Build Log'),
-      arguments: [{ jobFullName, buildNumber }]
+      arguments: [{ instanceId, jobFullName, buildNumber }]
     };
     this.statusBarItem.show();
   }

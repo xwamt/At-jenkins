@@ -112,7 +112,7 @@ export interface QueueItem {
 
 /** Compact `tree=` selector used when listing jobs (avoids huge unfiltered graphs). */
 export const LIST_JOBS_TREE =
-  'jobs[name,_class,url,color,buildable,inQueue,jobs[name],healthReport[score,description],lastBuild[number,result,building,timestamp,duration,url,displayName]]';
+  'jobs[name,_class,url,color,buildable,inQueue,jobs[name]{0,1},healthReport[score,description],lastBuild[number,result,building,timestamp,duration,url,displayName]]';
 
 export const BUILD_SUMMARY_TREE_FIELDS =
   'number,result,building,timestamp,duration,estimatedDuration,url,displayName,fullDisplayName';

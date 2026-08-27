@@ -332,6 +332,7 @@ export const window = {
         record.message = value;
       },
       title: undefined as string | undefined,
+      description: undefined as string | undefined,
       treeDataProvider: options?.treeDataProvider,
       onDidChangeSelection: () => ({ dispose: () => undefined }),
       onDidExpandElement: () => ({ dispose: () => undefined }),

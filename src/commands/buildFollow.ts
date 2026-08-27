@@ -9,6 +9,7 @@ import type { JenkinsStatusBarManager } from '../utils/statusBar';
 
 export interface FollowTriggeredBuildOptions {
   client: JenkinsClient;
+  instanceId?: string;
   jobFullName: string;
   queueUrl?: string;
   statusBar?: JenkinsStatusBarManager;
@@ -24,7 +25,8 @@ export interface JenkinsBuildFollowServiceOptions {
 
 export async function notifyBuildCompletion(
   jobFullName: string,
-  build: Pick<BuildDetail, 'number' | 'result' | 'duration' | 'url' | 'building'>
+  build: Pick<BuildDetail, 'number' | 'result' | 'duration' | 'url' | 'building'>,
+  instanceId?: string
 ): Promise<void> {
   const duration = formatDuration(build.duration);
   const result = (build.result ?? t('Unknown')).toUpperCase();
@@ -65,6 +67,7 @@ export async function notifyBuildCompletion(
   const action = await show(message, viewLog, openJenkins);
   if (action === viewLog) {
     await vscode.commands.executeCommand('atJenkins.openBuildLog', {
+      instanceId,
       jobFullName,
       buildNumber: build.number
     });
@@ -75,6 +78,7 @@ export async function notifyBuildCompletion(
 
 export class JenkinsBuildFollowService implements vscode.Disposable {
   private disposed = false;
+  private followGeneration = 0;
   private readonly pollIntervalMs: number;
   private readonly maxPolls: number;
   private readonly sleep: (ms: number) => Promise<void>;
@@ -91,34 +95,51 @@ export class JenkinsBuildFollowService implements vscode.Disposable {
 
   async follow(options: FollowTriggeredBuildOptions): Promise<void> {
     const log = asRedactedLog(options.log ?? noopLog);
+    const generation = ++this.followGeneration;
+    const isCurrent = (): boolean => !this.disposed && generation === this.followGeneration;
     try {
       const buildNumber = await this.resolveBuildNumber(options);
-      if (this.disposed || buildNumber === undefined) {
+      if (!isCurrent() || buildNumber === undefined) {
         return;
       }
 
       const startedAt = Date.now();
-      options.statusBar?.setBuildingStatus(options.jobFullName, buildNumber);
+      options.statusBar?.setBuildingStatus(
+        options.jobFullName,
+        buildNumber,
+        undefined,
+        options.instanceId
+      );
 
-      for (let i = 0; i < this.maxPolls && !this.disposed; i++) {
+      for (let i = 0; i < this.maxPolls && isCurrent(); i++) {
         const build = await options.client.getBuild(options.jobFullName, buildNumber);
         if (!build.building) {
-          options.statusBar?.clearBuildingStatus();
-          options.jobsTreeProvider?.refresh();
-          await notifyBuildCompletion(options.jobFullName, build);
+          if (isCurrent()) {
+            options.statusBar?.clearBuildingStatus();
+            options.jobsTreeProvider?.refresh();
+            await notifyBuildCompletion(options.jobFullName, build, options.instanceId);
+          }
           return;
         }
         const elapsedMs = build.timestamp ? Math.max(0, Date.now() - build.timestamp) : Date.now() - startedAt;
         options.statusBar?.setBuildingStatus(
           options.jobFullName,
           buildNumber,
-          formatDuration(elapsedMs)
+          formatDuration(elapsedMs),
+          options.instanceId
         );
         await this.sleep(this.pollIntervalMs);
       }
+
+      if (isCurrent()) {
+        options.statusBar?.clearBuildingStatus();
+        options.jobsTreeProvider?.refresh();
+      }
     } catch (error) {
       log.debug(`Build follow ended for ${options.jobFullName}: ${formatError(error)}`);
-      options.statusBar?.clearBuildingStatus();
+      if (isCurrent()) {
+        options.statusBar?.clearBuildingStatus();
+      }
     }
   }
 
@@ -146,7 +167,7 @@ export class JenkinsBuildFollowService implements vscode.Disposable {
       return job.lastBuild.number;
     }
     if (job.lastBuild && !job.lastBuild.building) {
-      await notifyBuildCompletion(options.jobFullName, job.lastBuild);
+      await notifyBuildCompletion(options.jobFullName, job.lastBuild, options.instanceId);
     }
     return undefined;
   }

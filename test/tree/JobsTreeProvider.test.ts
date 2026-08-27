@@ -179,6 +179,24 @@ describe('JobsTreeProvider', () => {
       expect((freestyleItem.iconPath as vscode.ThemeIcon).id).toBe('error');
     });
 
+    it('renders multibranch projects as branch folders with a type badge', async () => {
+      (mockClient.listJobs as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          name: 'repo-pipeline',
+          fullName: 'repo-pipeline',
+          url: 'https://ci.example.com/job/repo-pipeline',
+          isFolder: true,
+          isMultibranch: true,
+          _class: 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject'
+        }
+      ]);
+      const children = await provider.getChildren();
+      const item = children[0] as JenkinsFolderTreeItem;
+      expect(item.contextValue).toBe('jenkinsFolder.multibranch');
+      expect((item.iconPath as vscode.ThemeIcon).id).toBe('git-branch');
+      expect(item.description).toBe('[Multibranch]');
+    });
+
     it('expands folder to return child jobs', async () => {
       const folderSummary: JobSummary = {
         name: 'backend',

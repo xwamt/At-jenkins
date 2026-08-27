@@ -33,6 +33,7 @@ export interface JenkinsHttpResponse {
   text: string;
   ok: boolean;
   contentType?: string;
+  setCookies?: string[];
 }
 
 interface RequestPayload {
@@ -97,7 +98,14 @@ export class JenkinsHttpClient {
     try {
       const payload = this.toPayload(req);
       target = this.buildUrl(req);
-      return await this.performRequest(target, method, payload, req, '*/*');
+      try {
+        return await this.performRequest(target, method, payload, req, '*/*');
+      } catch (error) {
+        if (isIdempotentMethod(method) && isStaleKeepAliveError(error)) {
+          return await this.performRequest(target, method, payload, req, '*/*');
+        }
+        throw error;
+      }
     } catch (error) {
       this.logFailure(method, target?.pathname ?? req.path, error);
       throw error;
@@ -275,13 +283,20 @@ export class JenkinsHttpClient {
                 resHeaders[k.toLowerCase()] = v;
               }
             }
+            const setCookieHeader = response.headers['set-cookie'];
+            const setCookies = Array.isArray(setCookieHeader)
+              ? setCookieHeader
+              : typeof setCookieHeader === 'string'
+                ? [setCookieHeader]
+                : [];
             settleResolve({
               status,
               ok: status >= 200 && status < 400,
               headers: resHeaders,
               body,
               text,
-              contentType: response.headers['content-type']
+              contentType: response.headers['content-type'],
+              setCookies
             });
           });
 
@@ -469,6 +484,24 @@ function extractJenkinsErrorExcerpt(text: string): string | undefined {
     return decodeBasicHtml(h1[1]).trim().slice(0, 200);
   }
   return undefined;
+}
+
+function isIdempotentMethod(method: string): boolean {
+  return method === 'GET' || method === 'HEAD';
+}
+
+function isStaleKeepAliveError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+  const code = (error as { code?: string }).code;
+  const message = (error as { message?: string }).message ?? '';
+  return (
+    code === 'ECONNRESET' ||
+    code === 'EPIPE' ||
+    /socket hang up/i.test(message) ||
+    /ECONNRESET/i.test(message)
+  );
 }
 
 function decodeBasicHtml(value: string): string {

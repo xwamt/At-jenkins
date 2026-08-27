@@ -131,7 +131,7 @@ describe('PipelineScriptDocumentProvider', () => {
     });
 
     it('cancels save if user declines confirmation', async () => {
-      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Cancel') as never);
+      vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(undefined as never);
       const doc = draftDoc('folder/my-pipeline', 'pipeline { agent any }');
 
       expect(await provider.savePipelineScript(doc)).toBe(false);

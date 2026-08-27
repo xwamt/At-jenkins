@@ -139,8 +139,7 @@ export class PipelineScriptDocumentProvider
           label: instance.label || target.instanceId
         }),
         { modal: true },
-        t('Save to Jenkins'),
-        t('Cancel')
+        t('Save to Jenkins')
       );
 
       if (confirm !== t('Save to Jenkins')) {

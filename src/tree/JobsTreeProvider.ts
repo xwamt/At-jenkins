@@ -53,8 +53,19 @@ export class JenkinsFolderTreeItem extends vscode.TreeItem {
   ) {
     super(folder.name, vscode.TreeItemCollapsibleState.Collapsed);
     this.id = folderId(folder.fullName);
-    this.contextValue = 'jenkinsFolder';
-    this.iconPath = new vscode.ThemeIcon('folder');
+    const isOrg = Boolean(folder._class?.includes('OrganizationFolder'));
+    const isMultibranch = Boolean(folder.isMultibranch) || isOrg;
+    this.contextValue = isOrg
+      ? 'jenkinsFolder.org'
+      : isMultibranch
+        ? 'jenkinsFolder.multibranch'
+        : 'jenkinsFolder';
+    this.iconPath = isOrg
+      ? new vscode.ThemeIcon('organization')
+      : isMultibranch
+        ? new vscode.ThemeIcon('git-branch')
+        : new vscode.ThemeIcon('folder');
+    this.description = isOrg ? '[Organization]' : isMultibranch ? '[Multibranch]' : undefined;
     this.tooltip = buildFolderTooltip(folder);
   }
 }
@@ -107,8 +118,14 @@ export function weatherForJob(job: JobSummary): WeatherReport | undefined {
 }
 
 export function formatJobTypeBadge(job: JobSummary): string | undefined {
-  if (job.isMultibranch || job._class?.includes('WorkflowMultiBranchProject') || job._class?.includes('OrganizationFolder')) {
+  if (job.isMultibranch || job._class?.includes('WorkflowMultiBranchProject')) {
     return '[Multibranch]';
+  }
+  if (job._class?.includes('OrganizationFolder')) {
+    return '[Organization]';
+  }
+  if (job._class?.includes('MatrixProject') || job._class?.includes('matrix-project')) {
+    return '[Matrix]';
   }
   if (job._class?.includes('WorkflowJob') || job._class?.includes('CpsFlowDefinition')) {
     return '[Pipeline]';

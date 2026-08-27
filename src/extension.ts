@@ -75,7 +75,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const jobsTreeProvider = new JobsTreeProvider(configManager, clientPool, { log });
   const jobsTreeView = vscode.window.createTreeView('atJenkins.jobs', {
-    treeDataProvider: jobsTreeProvider
+    treeDataProvider: jobsTreeProvider,
+    showCollapseAll: true
   });
   context.subscriptions.push(jobsTreeView);
 
@@ -85,10 +86,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const syncJobsViewChrome = async (): Promise<void> => {
     try {
       const active = await configManager.getActiveInstance();
+      jobsTreeView.description = active?.label;
       jobsTreeView.message = active
         ? t('Controller: {label}', { label: active.label })
         : undefined;
     } catch {
+      jobsTreeView.description = undefined;
       jobsTreeView.message = undefined;
     }
   };
@@ -543,7 +546,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const doc = await vscode.workspace.openTextDocument(uri);
         await vscode.window.showTextDocument(doc, { preview: false });
         try {
-          await vscode.languages.setTextDocumentLanguage(doc, 'Log');
+          await vscode.languages.setTextDocumentLanguage(doc, 'log');
         } catch {
           // ignore
         }

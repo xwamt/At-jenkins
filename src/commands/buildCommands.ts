@@ -106,8 +106,7 @@ export async function triggerBuildHandler(
     const confirm = await vscode.window.showWarningMessage(
       t('Are you sure you want to trigger build for "{job}"?', { job: jobFullName }),
       { modal: true },
-      t('Trigger Build'),
-      t('Cancel')
+      t('Trigger Build')
     );
 
     if (confirm !== t('Trigger Build')) {
@@ -140,6 +139,7 @@ export async function triggerBuildHandler(
     if (context.followService) {
       void context.followService.follow({
         client,
+        instanceId,
         jobFullName,
         queueUrl: triggerResult?.queueUrl,
         statusBar: context.statusBar,
@@ -404,8 +404,7 @@ export async function stopBuildHandler(
         job: jobFullName
       }),
       { modal: true },
-      t('Stop Build'),
-      t('Cancel')
+      t('Stop Build')
     );
 
     if (confirm !== t('Stop Build')) {

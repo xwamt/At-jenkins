@@ -111,9 +111,7 @@ export function weatherForJob(job: JobSummary): WeatherReport | undefined {
   if (typeof job.healthScore === 'number') {
     return weatherFromHealthScore(job.healthScore, job.healthDescription);
   }
-  if (job.lastBuild) {
-    return calculateWeatherScore([job.lastBuild]);
-  }
+  // A single lastBuild is always 0% or 100% and misleads more than it helps.
   return undefined;
 }
 

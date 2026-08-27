@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as vscode from 'vscode';
 import {
+  isSafeJenkinsWebUrl,
   joinJenkinsWebUrl,
   openInJenkinsHandler,
   resolveJenkinsWebUrl
@@ -77,6 +78,24 @@ describe('openInJenkins', () => {
     const ok = await openInJenkinsHandler({ url: 'https://ci.example.com/job/app/' });
     expect(ok).toBe(true);
     expect(openSpy).toHaveBeenCalled();
+  });
+
+  it('refuses non-http(s) schemes from server-supplied URLs', async () => {
+    expect(isSafeJenkinsWebUrl('https://ci.example.com/job/app/')).toBe(true);
+    expect(isSafeJenkinsWebUrl('http://127.0.0.1:8080/job/app/')).toBe(true);
+    expect(isSafeJenkinsWebUrl('javascript:alert(1)')).toBe(false);
+    expect(isSafeJenkinsWebUrl('file:///etc/passwd')).toBe(false);
+    expect(isSafeJenkinsWebUrl('vscode://vscode.github-authentication/did-authenticate')).toBe(
+      false
+    );
+
+    const openSpy = vi.spyOn(vscode.env, 'openExternal').mockResolvedValue(true as never);
+    openSpy.mockClear();
+    const errorSpy = vi.spyOn(vscode.window, 'showErrorMessage').mockResolvedValue(undefined as never);
+    const ok = await openInJenkinsHandler({ url: 'file:///tmp/evil' });
+    expect(ok).toBe(false);
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
   });
 
   it('reports when no URL can be resolved', async () => {

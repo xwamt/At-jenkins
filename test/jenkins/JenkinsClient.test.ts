@@ -2,7 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import type { JenkinsInstanceConfig } from '../../src/config/schema';
 import { AuthError, NotFound, ReadOnly, Unsupported } from '../../src/jenkins/errors';
 import { JenkinsAuthenticator } from '../../src/jenkins/JenkinsAuthenticator';
-import { buildJobPath, JenkinsClient, parseQueueItemPath } from '../../src/jenkins/JenkinsClient';
+import {
+  buildJobPath,
+  JenkinsClient,
+  parseQueueItemPath,
+  PROGRESSIVE_TEXT_SIZE_PROBE
+} from '../../src/jenkins/JenkinsClient';
 import { JenkinsClientPool } from '../../src/jenkins/JenkinsClientPool';
 import type { JenkinsHttpClient, JenkinsHttpRequest, JenkinsHttpResponse } from '../../src/jenkins/JenkinsHttpClient';
 import { GET_JOB_TREE, LIST_JOBS_TREE } from '../../src/jenkins/types';
@@ -724,19 +729,74 @@ describe('JenkinsClient API operations', () => {
   });
 
   describe('getBuildLog', () => {
-    it('fetches consoleText and applies log truncation', async () => {
+    it('fetches progressiveText with a size probe then a tail fetch', async () => {
       const logContent = 'Line 1\nLine 2\nLine 3\nLine 4\nLine 5\n';
+      const total = Buffer.byteLength(logContent);
+      const starts: number[] = [];
       const httpClient = createMockHttpClient(async (req) => {
+        expect(req.path).toBe('/job/demo/10/logText/progressiveText');
+        const start = Number(req.query?.start);
+        starts.push(start);
+        if (start >= total) {
+          return {
+            text: '',
+            headers: { 'x-text-size': String(total), 'x-more-data': 'false' }
+          };
+        }
+        return {
+          text: logContent.slice(start),
+          headers: { 'x-text-size': String(total), 'x-more-data': 'false' }
+        };
+      });
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+
+      const log = await client.getBuildLog('demo', 10, { tailBytes: 15 });
+      expect(starts[0]).toBe(PROGRESSIVE_TEXT_SIZE_PROBE);
+      expect(log.truncated).toBe(true);
+      expect(log.text.length).toBe(15);
+      expect(log.totalBytes).toBe(total);
+      expect(log.startByte).toBe(total - 15);
+    });
+
+    it('fetches from a start offset without downloading earlier bytes', async () => {
+      const logContent = 'abcdefghijKLMNO';
+      const total = Buffer.byteLength(logContent);
+      const httpClient = createMockHttpClient(async (req) => {
+        expect(req.path).toBe('/job/demo/10/logText/progressiveText');
+        const start = Number(req.query?.start);
+        expect(start).toBe(10);
+        return {
+          text: logContent.slice(start),
+          headers: { 'x-text-size': String(total), 'x-more-data': 'true' }
+        };
+      });
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+
+      const log = await client.getBuildLog('demo', 10, { start: 10, maxBytes: 3 });
+      expect(log.text).toBe('KLM');
+      expect(log.startByte).toBe(10);
+      expect(log.endByte).toBe(13);
+      expect(log.totalBytes).toBe(total);
+      expect(log.hasMore).toBe(true);
+    });
+
+    it('falls back to consoleText when progressiveText is missing', async () => {
+      const logContent = 'hello world extra';
+      const httpClient = createMockHttpClient(async (req) => {
+        if (String(req.path).includes('progressiveText')) {
+          return { status: 404, text: 'not found' };
+        }
         expect(req.path).toBe('/job/demo/10/consoleText');
         return { text: logContent };
       });
       const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
       const client = new JenkinsClient({ httpClient, authenticator });
 
-      const log = await client.getBuildLog('demo', 10, { tailBytes: 15 });
+      const log = await client.getBuildLog('demo', 10, { tailBytes: 5 });
+      expect(log.text).toBe('extra');
       expect(log.truncated).toBe(true);
-      expect(log.text.length).toBe(15);
-      expect(log.totalBytes).toBe(Buffer.byteLength(logContent));
     });
 
     it('maps HTTP 401 on consoleText to AuthError', async () => {

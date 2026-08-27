@@ -20,5 +20,10 @@
   "atJenkins.command.followBuildLogInOutput.title": "Follow Build Log in Output",
   "atJenkins.command.openInJenkins.title": "Open in Jenkins",
   "atJenkins.welcome.instances": "No Jenkins controllers configured.\n[Add Controller](command:atJenkins.addInstance)",
-  "atJenkins.welcome.jobs": "No active controller selected or no jobs found.\n[Add Controller](command:atJenkins.addInstance)"
+  "atJenkins.welcome.jobs": "No active controller selected or no jobs found.\n[Add Controller](command:atJenkins.addInstance)",
+  "atJenkins.config.builds.pageSize": "Number of builds to load each time the Jobs tree expands a job or loads more history.",
+  "atJenkins.config.log.pollIntervalMs": "How often (milliseconds) to refresh a running build log in the editor and when following in the Output channel.",
+  "atJenkins.config.log.uiTailBytes": "Maximum trailing bytes shown in the build-log editor (default 2 MiB).",
+  "atJenkins.config.follow.pollIntervalMs": "How often (milliseconds) to poll Jenkins after triggering a build until it leaves the queue and finishes.",
+  "atJenkins.config.follow.maxPolls": "Maximum status-bar follow polls after triggering a build."
 }

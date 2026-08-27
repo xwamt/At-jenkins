@@ -9,7 +9,7 @@ import {
   type JenkinsAuthMode,
   type JenkinsInstanceConfig
 } from '../config/schema';
-import { buildWebviewStrings, t } from '../i18n/t';
+import { t } from '../i18n/t';
 import { JenkinsAuthenticator } from '../jenkins/JenkinsAuthenticator';
 import type { JenkinsCertVerifier } from '../jenkins/JenkinsCertTrustStore';
 import { JenkinsClient } from '../jenkins/JenkinsClient';
@@ -443,27 +443,27 @@ export function renderInstanceForm(options: RenderInstanceFormOptions = {}): Ins
   return {
     body,
     data: {
-      atJenkinsStrings: buildWebviewStrings({
-        submit: existing ? 'Save Controller' : 'Add Controller',
-        saving: 'Saving...',
-        testConnection: 'Test Connection',
-        testing: 'Testing connection...',
-        unknownError: 'Something went wrong.'
+      atJenkinsStrings: Object.assign(Object.create(null), {
+        submit: existing ? t('Save Controller') : t('Add Controller'),
+        saving: t('Saving...'),
+        testConnection: t('Test Connection'),
+        testing: t('Testing connection...'),
+        unknownError: t('Something went wrong.')
       })
     }
   };
 }
 
 const AUTH_MODE_LABELS: Record<JenkinsAuthMode, string> = {
-  none: 'No authentication',
-  apiToken: 'API Token (recommended)',
-  password: 'Username and Password'
+  none: t('No authentication'),
+  apiToken: t('API Token (recommended)'),
+  password: t('Username and Password')
 };
 
 function renderAuthOptions(selected: JenkinsAuthMode): string {
   return JENKINS_AUTH_MODES.map(
     (mode) =>
-      `<option value="${mode}"${mode === selected ? ' selected' : ''}>${escapeAttr(t(AUTH_MODE_LABELS[mode]))}</option>`
+      `<option value="${mode}"${mode === selected ? ' selected' : ''}>${escapeAttr(AUTH_MODE_LABELS[mode])}</option>`
   ).join('\n            ');
 }
 

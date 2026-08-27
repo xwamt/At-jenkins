@@ -102,7 +102,12 @@ export class BuildLogDocumentProvider
       return;
     }
 
+    let inFlight = false;
     const timer = setInterval(async () => {
+      if (inFlight) {
+        return;
+      }
+      inFlight = true;
       try {
         const client = await this.clientPool.get(instanceId);
         const build = await client.getBuild(jobFullName, buildNumber);
@@ -122,6 +127,8 @@ export class BuildLogDocumentProvider
           );
           this.stopAutoRefresh(uri);
         }
+      } finally {
+        inFlight = false;
       }
     }, this.pollIntervalMs);
 
@@ -164,7 +171,11 @@ export class BuildLogDocumentProvider
     channel.show(true);
 
     channel.appendLine(
-      `=== [${instanceId}] ${jobFullName} #${buildNumber} Console Log ===`
+      t('=== [{instance}] {job} #{build} Console Log ===', {
+        instance: instanceId,
+        job: jobFullName,
+        build: buildNumber
+      })
     );
 
     const client = await this.clientPool.get(instanceId);
@@ -205,7 +216,9 @@ export class BuildLogDocumentProvider
       const currentBuild = await client.getBuild(jobFullName, buildNumber);
       if (!currentBuild.building) {
         channel.appendLine(
-          `=== Build finished with result: ${currentBuild.result ?? 'UNKNOWN'} ===`
+          t('=== Build finished with result: {result} ===', {
+            result: currentBuild.result ?? t('Unknown')
+          })
         );
         return false;
       }
@@ -237,7 +250,7 @@ export class BuildLogDocumentProvider
             `Error following build log for ${instanceId}/${jobFullName} #${buildNumber}: ${formatError(err)}`
           );
           if (consecutiveFailures >= 3) {
-            channel.appendLine(`=== Stopped following after repeated errors ===`);
+            channel.appendLine(t('=== Stopped following after repeated errors ==='));
             disposable.dispose();
           }
         } finally {
@@ -245,7 +258,9 @@ export class BuildLogDocumentProvider
         }
       }, pollMs);
     } catch (err) {
-      channel.appendLine(`Failed to fetch build log: ${formatError(err)}`);
+      channel.appendLine(
+        t('Failed to fetch build log: {error}', { error: formatError(err) })
+      );
     }
 
     return disposable;

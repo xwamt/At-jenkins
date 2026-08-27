@@ -12,9 +12,9 @@ AT Jenkins brings Jenkins CI/CD controller navigation, job inspection, build log
 
 - **Multiple Jenkins Controllers**: Configure one or more Jenkins controllers (Label, Base URL, Auth Mode). Supports custom prefix paths (e.g. `http://ci.internal.net:8080/jenkins`).
 - **Three Authentication Modes**:
-  - **No authentication (None)**: For open or read-only internal mirrors.
+  - **No authentication (None)**: For open or read-only internal mirrors. Anonymous POSTs still fetch a CSRF crumb and bind the session cookie when the controller requires it.
   - **API Token (recommended)**: Authenticates using the API token generated under Jenkins → User profile → Configure → API Token.
-  - **Username and Password**: User account credentials with automatic CSRF Crumb fetching and caching (supports Jenkins 2.x `DefaultCrumbIssuer`).
+  - **Username and Password**: User account credentials with automatic CSRF Crumb fetching, session-cookie binding, and caching (supports Jenkins 2.x `DefaultCrumbIssuer`).
 - **Encrypted Credential Storage**: Sensitive API tokens and passwords are stored exclusively in VS Code's native `SecretStorage`, never written to plaintext settings or disk configs.
 - **TLS Trust-On-First-Use (TOFU)**: HTTPS connections to controllers with self-signed or private CA certificates prompt a certificate fingerprint confirmation dialog and record its SHA-256 fingerprint. Any subsequent fingerprint change blocks the connection and displays a security warning to prevent machine-in-the-middle attacks.
 - **Read-Only Controller Mode (`readOnly`)**: Mark sensitive production controllers as read-only. Trigger/stop/save actions remain visible but refuse at runtime (user message + `ReadOnly` hard-block in the client).
@@ -35,7 +35,11 @@ AT Jenkins brings Jenkins CI/CD controller navigation, job inspection, build log
   - Job type & status visualization:
     - Distinguishes Pipeline jobs (`WorkflowJob` / `CpsFlowDefinition`) and Freestyle jobs (`FreeStyleProject`).
     - Job status icons reflecting health and status (Pass / Error / Warning / Aborted / Disabled / Anime spinning for building).
-  - Lazy-loaded build history: Expanding a job queries its recent builds with incremental pagination (default 10 builds per page), providing a **"Load more builds..."** item to load subsequent pages on demand.
+    - Weather/stability from Jenkins `healthReport` (omitted when only a single lastBuild is known).
+    - Type badges for Multibranch, Organization Folder, and Matrix jobs.
+  - Lazy-loaded build history: Expanding a job queries its recent builds with incremental pagination (default 10 builds per page, `atJenkins.builds.pageSize`), providing a **"Load more builds..."** item to load subsequent pages on demand.
+  - **Open in Jenkins** (`atJenkins.openInJenkins`): Opens the controller/folder/job/build (or the matching virtual document) in the browser. Only `http`/`https` URLs are accepted.
+  - Empty and error rows: no-jobs and fetch-error placeholders, with retry on the error row.
 
 ---
 
@@ -48,7 +52,7 @@ AT Jenkins brings Jenkins CI/CD controller navigation, job inspection, build log
 - **Live Build Console Logs (`at-jenkins:` Scheme)**:
   - Opens build console logs via virtual document URI (`at-jenkins://{instanceId}/{buildNumber}/consoleText?job={jobFullName}`).
   - Native Log syntax highlighting.
-  - Progressive live auto-refresh: for running builds (`building: true`), automatically polls console output every 3 seconds and updates the document until completion.
+  - Progressive live auto-refresh: for running builds (`building: true`), polls via `logText/progressiveText` (falls back to `consoleText`) using `atJenkins.log.pollIntervalMs` (default 3s) until completion.
   - Auto-cleanup: polling timers are automatically cancelled when the log tab is closed in the IDE.
 - **Follow Build Log in Output Channel**:
   - Context menu command **"Follow Build Log in Output"** streams build log chunks incrementally into the VS Code Output Channel (`AT Jenkins`), offering terminal-style following with progress indication.
@@ -64,6 +68,8 @@ AT Jenkins brings Jenkins CI/CD controller navigation, job inspection, build log
     - **Boolean parameters**: QuickPick selection for `true` / `false`.
     - **Password parameters**: Masked password input box.
   - Modal confirmation: prompts a confirmation dialog before sending the trigger request to Jenkins.
+  - Recent parameters: when a job was triggered before, a QuickPick offers **Use recent parameters**, **Edit parameters**, or **Use default parameters** (password/secret parameters are never persisted).
+  - After a trigger, the status bar follows queue → running → done and offers **View Log** / **Open in Jenkins** on completion.
   - Read-only protection: rejects execution if the target controller is configured with `readOnly: true`.
 - **Stop Build (`atJenkins.stopBuild`)**:
   - Available on active, running builds (`jenkinsBuild.building`).
@@ -101,6 +107,17 @@ Seven tools, all strictly `read-only` and auto-approved once the AT Series MCP c
 - **No Write Tools in MCP**: MCP does not provide tools to trigger builds, stop builds, delete jobs, or modify scripts. All mutating operations remain user-driven via IDE UI.
 - **Background Access Gate**: Controllers with `allowBackgroundAccess` off still appear in `jenkins_list_instances` (with flags); other `jenkins_*` tools refuse access until the flag is enabled.
 - **Redaction**: All logger outputs and error responses automatically redact tokens, cookies, and passwords.
+
+---
+
+## Settings
+
+Tunable in the Settings UI under **AT Jenkins** (or `atJenkins.*` in `settings.json`):
+
+- `atJenkins.builds.pageSize` — builds loaded per Jobs-tree page (default 10).
+- `atJenkins.log.pollIntervalMs` — editor auto-refresh and Output-follow poll interval (default 3000).
+- `atJenkins.log.uiTailBytes` — trailing bytes shown in the build-log editor (default 2 MiB).
+- `atJenkins.follow.pollIntervalMs` / `atJenkins.follow.maxPolls` — status-bar follow after triggering a build.
 
 ---
 

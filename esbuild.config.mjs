@@ -36,7 +36,7 @@ const watch = process.argv.includes('--watch');
 
 const common = {
   bundle: true,
-  // 生产不出 sourcemap：.vscodeignore 会剥掉 **/*.map，留下的只是悬空引用。
+  // No production sourcemaps: .vscodeignore strips **/*.map and would leave dangling references.
   sourcemap: watch,
   minify: !watch
 };

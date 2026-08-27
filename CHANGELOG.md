@@ -4,6 +4,21 @@
 
 ---
 
+## [Unreleased]
+
+### 客户端与安全
+- 构建日志优先走 Jenkins `logText/progressiveText`（`X-Text-Size` / `start`），缺失时回退 `/consoleText`，跟随与尾部截断不再每次下载整份日志。
+- CSRF Crumb 与 `JSESSIONID` 会话 Cookie 绑定，适用于 **password** 与 **none** 鉴权下的写操作。
+- 「在 Jenkins 中打开」仅允许 `http:` / `https:`，拒绝 `file:` / `javascript:` / `vscode:` 等服务端下发的危险 scheme。
+- Webview CSP 去掉未使用的 `style-src 'unsafe-inline'`。
+
+### UX
+- Jobs 树展示 `healthReport` 天气/稳定性（不再用单次 lastBuild 冒充 0%/100%）。
+- 触发构建后状态栏跟随 + 完成通知；参数化构建可复用最近一次非密钥参数。
+- 新增 `atJenkins.openInJenkins`，以及可配置的分页/轮询/日志尾部设置（`atJenkins.builds.pageSize`、`atJenkins.log.*`、`atJenkins.follow.*`）。
+
+---
+
 ## [v0.1.0] - 2026-08-25
 
 **AT Jenkins 首发版本正式发布！🎉**

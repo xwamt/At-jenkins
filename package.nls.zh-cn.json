@@ -20,5 +20,10 @@
   "atJenkins.command.followBuildLogInOutput.title": "在输出通道中跟踪构建日志",
   "atJenkins.command.openInJenkins.title": "在 Jenkins 中打开",
   "atJenkins.welcome.instances": "未配置 Jenkins 控制器。\n[添加控制器](command:atJenkins.addInstance)",
-  "atJenkins.welcome.jobs": "未选择活动控制器或未找到任务。\n[添加控制器](command:atJenkins.addInstance)"
+  "atJenkins.welcome.jobs": "未选择活动控制器或未找到任务。\n[添加控制器](command:atJenkins.addInstance)",
+  "atJenkins.config.builds.pageSize": "在 Jobs 树展开任务或加载更多历史时，每次加载的构建条数。",
+  "atJenkins.config.log.pollIntervalMs": "正在运行的构建日志在编辑器和输出通道跟踪中的刷新间隔（毫秒）。",
+  "atJenkins.config.log.uiTailBytes": "构建日志编辑器最多显示的末尾字节数（默认 2 MiB）。",
+  "atJenkins.config.follow.pollIntervalMs": "触发构建后轮询队列与构建状态的间隔（毫秒）。",
+  "atJenkins.config.follow.maxPolls": "触发构建后状态栏跟踪的最大轮询次数。"
 }

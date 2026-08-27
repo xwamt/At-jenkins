@@ -10,6 +10,7 @@ import { JenkinsClientPool } from '../../src/jenkins/JenkinsClientPool';
 import type { BuildSummary, JobSummary } from '../../src/jenkins/types';
 import {
   calculateWeatherScore,
+  weatherForJob,
   weatherFromHealthScore,
   formatBuildDescription,
   formatDuration,
@@ -668,6 +669,32 @@ describe('JobsTreeProvider', () => {
       expect(weatherFromHealthScore(40).icon).toBe('🌧️');
       expect(weatherFromHealthScore(0).icon).toBe('⛈️');
       expect(weatherFromHealthScore(95, 'custom').description).toBe('custom');
+    });
+
+    it('weatherForJob uses healthScore and skips a single lastBuild fallback', () => {
+      expect(
+        weatherForJob({
+          name: 'app',
+          fullName: 'app',
+          url: '',
+          healthScore: 40
+        })?.icon
+      ).toBe('🌧️');
+      expect(
+        weatherForJob({
+          name: 'app',
+          fullName: 'app',
+          url: '',
+          lastBuild: {
+            number: 1,
+            url: '',
+            result: 'SUCCESS',
+            building: false,
+            timestamp: 0,
+            duration: 1
+          }
+        })
+      ).toBeUndefined();
     });
 
     it('formatBuildDescription includes elapsed time for running builds', () => {

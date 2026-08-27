@@ -84,6 +84,12 @@ describe('every string the extension translates at runtime', () => {
       expect(Object.keys(bundle), `${path}: ${JSON.stringify(key)}`).toContain(key);
     }
   });
+
+  it('leaves no stale bundle key that is never passed to t()', () => {
+    for (const key of Object.keys(bundle)) {
+      expect(keys.has(key), `stale bundle key: ${JSON.stringify(key)}`).toBe(true);
+    }
+  });
 });
 
 function stringValuesOf(value: unknown): string[] {

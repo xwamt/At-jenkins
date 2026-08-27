@@ -6,6 +6,7 @@ import { syncPackagedHub } from './mcp/hubSync';
 import { ensureAtSeriesConfigForCurrentIde } from './mcp/McpConfigInstaller';
 import { JenkinsInstanceConfigManager } from './config/JenkinsInstanceConfigManager';
 import type { JenkinsInstanceConfig } from './config/schema';
+import { readAtJenkinsSettings } from './config/settings';
 import { t } from './i18n/t';
 import { createInteractiveCertVerifier } from './jenkins/createInteractiveCertVerifier';
 import { JenkinsCertTrustStore } from './jenkins/JenkinsCertTrustStore';
@@ -67,20 +68,28 @@ export function activate(context: vscode.ExtensionContext): void {
   };
   void syncStatusBar();
 
+  const settings = readAtJenkinsSettings();
+
   const instancesTreeProvider = new InstancesTreeProvider(configManager);
   const instancesTreeView = vscode.window.createTreeView('atJenkins.instances', {
     treeDataProvider: instancesTreeProvider
   });
   context.subscriptions.push(instancesTreeView);
 
-  const jobsTreeProvider = new JobsTreeProvider(configManager, clientPool, { log });
+  const jobsTreeProvider = new JobsTreeProvider(configManager, clientPool, {
+    log,
+    pageSize: settings.buildsPageSize
+  });
   const jobsTreeView = vscode.window.createTreeView('atJenkins.jobs', {
     treeDataProvider: jobsTreeProvider,
     showCollapseAll: true
   });
   context.subscriptions.push(jobsTreeView);
 
-  const followService = new JenkinsBuildFollowService();
+  const followService = new JenkinsBuildFollowService({
+    pollIntervalMs: settings.followPollIntervalMs,
+    maxPolls: settings.followMaxPolls
+  });
   context.subscriptions.push(followService);
 
   const syncJobsViewChrome = async (): Promise<void> => {
@@ -103,7 +112,11 @@ export function activate(context: vscode.ExtensionContext): void {
     configManager,
     { log, draftProvider: draftFileSystemProvider }
   );
-  const buildLogProvider = new BuildLogDocumentProvider(clientPool, { log });
+  const buildLogProvider = new BuildLogDocumentProvider(clientPool, {
+    log,
+    pollIntervalMs: settings.logPollIntervalMs,
+    uiLogTailBytes: settings.uiLogTailBytes
+  });
   const jobSummaryProvider = new JobSummaryDocumentProvider(clientPool, { log });
 
   const combinedContentProvider: vscode.TextDocumentContentProvider = {

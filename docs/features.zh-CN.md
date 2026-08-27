@@ -12,9 +12,9 @@ AT Jenkins 为 VS Code 与 Cursor 带来了原生的 Jenkins CI/CD 控制器管�
 
 - **多 Jenkins 控制器管理**：支持配置一个或多个 Jenkins 控制器（包含显示标签 Label、基础 URL、认证方式），支持自定义路径前缀（如 `http://ci.internal.net:8080/jenkins`）。
 - **三种身份验证模式**：
-  - **无身份验证 (None)**：适用于公开或仅内网只读镜像。
+  - **无身份验证 (None)**：适用于公开或仅内网只读镜像。若控制器启用 CSRF，匿名 POST 同样会获取 Crumb 并绑定会话 Cookie。
   - **API Token（推荐）**：使用 Jenkins 用户个人资料页面（Jenkins → 用户个人资料 → 设置 → API Token）生成的 API Token 进行认证。
-  - **用户名与密码 (Username and Password)**：支持账号密码认证，自动获取并缓存 CSRF Crumb 请求头（完整适配 Jenkins 2.x 的 `DefaultCrumbIssuer` CSRF 防护机制）。
+  - **用户名与密码 (Username and Password)**：支持账号密码认证，自动获取并缓存 CSRF Crumb 请求头及会话 Cookie（完整适配 Jenkins 2.x 的 `DefaultCrumbIssuer` CSRF 防护机制）。
 - **凭据安全加密存储**：敏感 API Token 及密码由 VS Code 原生 `SecretStorage` 进行安全加密存储，绝不以明文形式保存在设置文件或磁盘上。
 - **TLS 首次信任机制 (TOFU)**：针对自签名证书或私有 CA 证书的 HTTPS 连接，首次连接时弹出指纹确认弹窗并记录 SHA-256 指纹；若证书在后续发生非预期变更，则自动拦截连接并弹出安全警告，有效防御中间人劫持。
 - **只读控制器模式 (`readOnly`)**：支持将生产环境控制器设置为只读模式。触发/停止/保存操作仍会出现在菜单中，但运行时拒绝执行（用户提示 + 客户端 `ReadOnly` 硬拦截）。
@@ -35,7 +35,11 @@ AT Jenkins 为 VS Code 与 Cursor 带来了原生的 Jenkins CI/CD 控制器管�
   - 任务类型与状态智能识别：
     - 区分 Pipeline 流水线任务（`WorkflowJob` / `CpsFlowDefinition`）与 Freestyle 自由风格任务（`FreeStyleProject`）。
     - 丰富的状态图标（成功绿色圆圈、失败红色错误、不稳定黄色警告、终止/禁用紫色圆圈、构建中蓝色旋转动画）。
-  - 增量分页与按需加载：展开任务时按需分页加载历史构建记录（默认每页 10 条），末尾提供「加载更多构建...」按钮以展开更多历史。
+    - 来自 Jenkins `healthReport` 的天气/稳定性（仅有单次 lastBuild 时不显示，避免 0%/100% 误导）。
+    - Multibranch、Organization Folder、Matrix 任务类型徽标。
+  - 增量分页与按需加载：展开任务时按需分页加载历史构建记录（默认每页 10 条，可由 `atJenkins.builds.pageSize` 调整），末尾提供「加载更多构建...」按钮以展开更多历史。
+  - **在 Jenkins 中打开**（`atJenkins.openInJenkins`）：从控制器/文件夹/任务/构建或对应虚拟文档在浏览器打开页面；仅接受 `http`/`https`。
+  - 空列表与错误行：无任务占位、加载失败可点击重试。
 
 ---
 
@@ -48,7 +52,7 @@ AT Jenkins 为 VS Code 与 Cursor 带来了原生的 Jenkins CI/CD 控制器管�
 - **实时构建控制台日志 (`at-jenkins:` 协议)**：
   - 通过虚拟文档 URI 打开构建控制台日志 (`at-jenkins://{instanceId}/{buildNumber}/consoleText?job={jobFullName}`)。
   - 原生 Log 语法高亮。
-  - 增量流式自动刷新：对正在运行中的构建（`building: true`），每 3 秒自动轮询并追加新日志，构建结束后自动终止轮询。
+  - 增量流式自动刷新：对正在运行中的构建（`building: true`），通过 `logText/progressiveText`（缺失时回退 `consoleText`）按 `atJenkins.log.pollIntervalMs`（默认 3 秒）轮询，构建结束后自动终止。
   - 智能资源释放：当日志标签页在编辑器中关闭时，自动停止对应的后台轮询计时器。
 - **在输出通道中跟踪日志 (Follow in Output)**：
   - 右键点击构建节点选择「在输出通道中跟踪构建日志」，在 VS Code Output 通道（`AT Jenkins`）中以终端流式效果实时输出最新日志，带有清晰的构建开始与结束提示。
@@ -64,6 +68,8 @@ AT Jenkins 为 VS Code 与 Cursor 带来了原生的 Jenkins CI/CD 控制器管�
     - **Boolean 布尔参数**：`true` / `false` 快速选项。
     - **Password 密码参数**：密码掩码输入框。
   - 模态二次确认框：在发送触发请求前弹出警告确认弹窗。
+  - 最近参数：若该任务曾经触发过，QuickPick 提供「使用上次参数」「修改参数」「使用默认参数」（密码类参数不会被持久化）。
+  - 触发后状态栏跟踪排队 → 构建中 → 结束，完成时可「查看日志」或「在 Jenkins 中打开」。
   - 只读控制器拦截：若控制器配置为只读，则拒绝触发并提示错误。
 - **停止构建 (`atJenkins.stopBuild`)**：
   - 仅在运行中的构建节点上可用（`jenkinsBuild.building`）。
@@ -101,6 +107,17 @@ AT Jenkins 为 VS Code 与 Cursor 带来了原生的 Jenkins CI/CD 控制器管�
 - **MCP 无写操作工具**：MCP 工具集严格不提供任何构建触发、终止构建或修改脚本的工具。所有破坏性与写操作均只能由用户在 IDE 界面手动确认执行。
 - **后台访问门禁**：未勾选“允许 Agent 后台访问”的实例仍会出现在 `jenkins_list_instances` 中（含标志），但其它 `jenkins_*` 工具会拒绝访问。
 - **敏感数据脱敏**：日志与错误响应中涉及 Token、Cookie 及密码的内容均由脱敏器自动掩码。
+
+---
+
+## 设置项
+
+可在设置界面的 **AT Jenkins** 分组（或 `settings.json` 的 `atJenkins.*`）中调整：
+
+- `atJenkins.builds.pageSize` — Jobs 树每次加载的构建条数（默认 10）。
+- `atJenkins.log.pollIntervalMs` — 编辑器自动刷新与输出通道跟踪的轮询间隔（默认 3000 毫秒）。
+- `atJenkins.log.uiTailBytes` — 构建日志编辑器显示的末尾字节数（默认 2 MiB）。
+- `atJenkins.follow.pollIntervalMs` / `atJenkins.follow.maxPolls` — 触发构建后状态栏跟踪的轮询间隔与最大次数。
 
 ---
 

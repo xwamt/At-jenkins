@@ -17,7 +17,10 @@ import type {
   QueueItem,
   TriggerBuildResult
 } from './types';
-import { BUILD_SUMMARY_TREE_FIELDS, GET_JOB_TREE, LIST_JOBS_TREE } from './types';
+import { BUILD_SUMMARY_TREE_FIELDS, DEFAULT_LOG_TAIL_BYTES, GET_JOB_TREE, LIST_JOBS_TREE } from './types';
+
+/** Past any 32-bit log; Jenkins returns an empty body and `X-Text-Size` = current length. */
+export const PROGRESSIVE_TEXT_SIZE_PROBE = 2_147_483_647;
 
 export interface JenkinsClientOptions {
   httpClient: JenkinsHttpClient;
@@ -440,8 +443,94 @@ export class JenkinsClient {
 
   /**
    * Retrieves and optionally truncates the console text log for a build.
+   * Prefers Jenkins' incremental `logText/progressiveText` so follow/tail
+   * paths do not re-download the entire console on every poll, and falls
+   * back to `/consoleText` when that endpoint is missing.
    */
   async getBuildLog(
+    fullName: string,
+    buildNumber: number,
+    opts?: LogTruncateOptions
+  ): Promise<LogTruncateResult> {
+    try {
+      return await this.getBuildLogProgressive(fullName, buildNumber, opts);
+    } catch (error) {
+      if (error instanceof NotFound) {
+        this.log.debug(
+          `progressiveText unavailable for ${fullName} #${buildNumber}; falling back to consoleText`
+        );
+        return this.getBuildLogConsoleText(fullName, buildNumber, opts);
+      }
+      throw error;
+    }
+  }
+
+  private async getBuildLogProgressive(
+    fullName: string,
+    buildNumber: number,
+    opts?: LogTruncateOptions
+  ): Promise<LogTruncateResult> {
+    if (opts?.start !== undefined) {
+      const chunk = await this.fetchProgressiveText(fullName, buildNumber, opts.start);
+      const sliced = truncateBuildLog(chunk.body, {
+        start: 0,
+        maxBytes: opts.maxBytes,
+        tailBytes: opts.maxBytes === undefined ? opts.tailBytes : undefined
+      });
+      const startByte = opts.start;
+      const endByte = startByte + sliced.endByte;
+      const totalBytes = Math.max(chunk.nextStart, endByte);
+      return {
+        text: sliced.text,
+        startByte,
+        endByte,
+        totalBytes,
+        truncated: sliced.truncated || startByte > 0 || endByte < totalBytes,
+        hasMore: Boolean(sliced.hasMore) || endByte < totalBytes
+      };
+    }
+
+    const tailBytes = opts?.tailBytes ?? DEFAULT_LOG_TAIL_BYTES;
+    const probe = await this.fetchProgressiveText(fullName, buildNumber, PROGRESSIVE_TEXT_SIZE_PROBE);
+    const totalBytes = probe.nextStart;
+    if (tailBytes <= 0) {
+      return {
+        text: '',
+        startByte: totalBytes,
+        endByte: totalBytes,
+        totalBytes,
+        truncated: totalBytes > 0,
+        hasMore: false
+      };
+    }
+    if (totalBytes <= tailBytes) {
+      const chunk =
+        totalBytes === 0
+          ? probe
+          : await this.fetchProgressiveText(fullName, buildNumber, 0);
+      return {
+        text: chunk.body.toString('utf8'),
+        startByte: 0,
+        endByte: totalBytes,
+        totalBytes,
+        truncated: false,
+        hasMore: false
+      };
+    }
+
+    const from = totalBytes - tailBytes;
+    const chunk = await this.fetchProgressiveText(fullName, buildNumber, from);
+    return {
+      text: chunk.body.toString('utf8'),
+      startByte: from,
+      endByte: Math.max(chunk.nextStart, from),
+      totalBytes,
+      truncated: true,
+      hasMore: false
+    };
+  }
+
+  private async getBuildLogConsoleText(
     fullName: string,
     buildNumber: number,
     opts?: LogTruncateOptions
@@ -460,6 +549,28 @@ export class JenkinsClient {
     }, 'GET');
 
     return truncateBuildLog(res.body, opts);
+  }
+
+  private async fetchProgressiveText(
+    fullName: string,
+    buildNumber: number,
+    start: number
+  ): Promise<{ body: Buffer; nextStart: number }> {
+    const jobPath = buildJobPath(fullName);
+    const path = `${jobPath}/${buildNumber}/logText/progressiveText`;
+    const res = await this.authenticator.withAuthRetry(async (headers) => {
+      return this.httpClient.request({
+        method: 'GET',
+        path,
+        query: { start },
+        headers
+      });
+    }, 'GET');
+
+    const sizeHeader = res.headers['x-text-size'];
+    const parsed = sizeHeader !== undefined ? Number.parseInt(sizeHeader, 10) : Number.NaN;
+    const nextStart = Number.isFinite(parsed) && parsed >= 0 ? parsed : start + res.body.length;
+    return { body: res.body, nextStart };
   }
 
   /**
@@ -580,15 +691,6 @@ function replaceScriptInXml(xml: string, newScript: string): string {
     );
   }
   return xml.replace(scriptTag, () => replacement);
-}
-
-function escapeXml(unsafe: string): string {
-  return unsafe
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
 }
 
 function unescapeXml(escaped: string): string {

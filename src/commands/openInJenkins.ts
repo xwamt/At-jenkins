@@ -33,6 +33,21 @@ export function joinJenkinsWebUrl(baseUrl: string, path: string): string {
   return `${base}${suffix}`;
 }
 
+/**
+ * Jenkins web pages are always http(s). Server-supplied `job.url` / `build.url`
+ * values must not be handed to `openExternal` if they use another scheme.
+ */
+export function isSafeJenkinsWebUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:') && Boolean(parsed.hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
 export async function resolveJenkinsWebUrl(
   target: OpenInJenkinsTarget | undefined,
   configManager?: JenkinsInstanceConfigManager
@@ -115,6 +130,10 @@ export async function openInJenkinsHandler(
     const url = await resolveJenkinsWebUrl(target, configManager);
     if (!url) {
       vscode.window.showInformationMessage(t('No Jenkins URL available for this item.'));
+      return false;
+    }
+    if (!isSafeJenkinsWebUrl(url)) {
+      vscode.window.showErrorMessage(t('Refusing to open a non-http(s) Jenkins URL.'));
       return false;
     }
     await vscode.env.openExternal(vscode.Uri.parse(url));

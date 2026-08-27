@@ -66,13 +66,11 @@
 
 **Explicitly OUT of this plan:** Pipeline replay, Scan Multibranch/Organization folder, Matrix axis children, Blue Ocean links, SSO/custom headers, any MCP write tool, any 8th MCP tool (no artifact/test/queue/search MCP tools — each would amend D14 and is not proposed), stage-timeline webview (D8 stays deferred; textual only), Freestyle config.xml editor, Git push for SCM-backed Jenkinsfiles (D2 stays view-only).
 
-**Deviations from the spec's v2 sketch (deliberate, frozen by this plan's scope):**
+**Canonical IDs match the spec’s frozen table.** Remaining implementation choices (already reflected in the spec):
 
-1. Command id is `atJenkins.searchJobs` (spec sketches `atJenkins.goToJob`); behavior is the same Go to Job QuickPick.
-2. On pick, the QuickPick opens the **Job Summary** instead of `TreeView.reveal` — reveal requires implementing `getParent` on `JobsTreeProvider`, and the frozen scope prefers the summary over that invasive change.
-3. Queue `why` comes from the job API's `queueItem[id,why]` field (one selector addition on existing calls) instead of a separate `getQueueItemsForJob` walk of `/queue/api/json`, and it renders on the **job row** (tooltip + ` queued` marker) rather than a queued pseudo-node. Same data, fewer requests, and it matches the frozen scope's "status bar + job tooltip" surface.
-4. Stage summary and JUnit counts render in the **build hover** via `resolveTreeItem` (lazy, cached) rather than a `showStageSummary` command — the frozen scope requires "if plugin present, else hide", and a hover section hides cleanly where a context command cannot.
-5. Live-test env vars are `AT_JENKINS_TEST_URL` / `AT_JENKINS_TEST_USER` / `AT_JENKINS_TEST_TOKEN` (frozen scope). The engineering contract §6 sketches `AT_JENKINS_LIVE_*` names and explicitly says to update the contract if names differ — Task 10 does that in the same commit.
+1. On pick, `atJenkins.searchJobs` opens **Job Summary** instead of `TreeView.reveal` (`JobsTreeProvider` has no `getParent`).
+2. Queue `why` comes from the job API’s `queueItem[id,why]` field on existing list/get calls, rendered on the **job row** (tooltip + queued marker) rather than a queued pseudo-node.
+3. Stage summary and JUnit counts render in the **build hover** via `resolveTreeItem` (lazy, cached) rather than a dedicated command — hide cleanly when the plugin/report is absent.
 
 ---
 
@@ -717,7 +715,7 @@ EOF
 
 ### Task 10: Opt-in live Jenkins integration tests
 
-Default `npm test` must stay green and skip these entirely — gated on `AT_JENKINS_TEST_URL` / `AT_JENKINS_TEST_USER` / `AT_JENKINS_TEST_TOKEN` (frozen-scope names; the engineering contract §6 sketched `AT_JENKINS_LIVE_*` and instructs updating the contract when names differ — do that here). Read-only assertions only: live tests never trigger, cancel, or edit anything. Never in CI. Never put real hosts/credentials in the repo — live values exist only in the runner's environment.
+Default `npm test` must stay green and skip these entirely — gated on `AT_JENKINS_TEST_URL` / `AT_JENKINS_TEST_USER` / `AT_JENKINS_TEST_TOKEN`. Read-only assertions only: live tests never trigger, cancel, or edit anything. Never in CI. Never put real hosts/credentials in the repo — live values exist only in the runner's environment.
 
 **Files:**
 - Create: `test/live/JenkinsClient.live.test.ts`
@@ -774,7 +772,7 @@ If a live controller is actually available in the environment, also run once wit
 
 - [ ] **Step 3: Docs + contract sync + commit**
 
-README: document the three env vars, the optional `AT_JENKINS_TEST_JOB`, and that the suite is read-only and skipped by default. Engineering contract §6: replace the sketched `AT_JENKINS_LIVE_*` names with the final `AT_JENKINS_TEST_*` names (the contract explicitly asks for this update).
+README: document the three env vars, the optional `AT_JENKINS_TEST_JOB`, and that the suite is read-only and skipped by default.
 
 ```bash
 git add test/live README.md docs/superpowers/plans/2026-08-27-at-jenkins-engineering.md

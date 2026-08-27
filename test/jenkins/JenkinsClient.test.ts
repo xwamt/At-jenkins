@@ -2,9 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { JenkinsInstanceConfig } from '../../src/config/schema';
 import { AuthError, NotFound, ReadOnly, Unsupported } from '../../src/jenkins/errors';
 import { JenkinsAuthenticator } from '../../src/jenkins/JenkinsAuthenticator';
-import { buildJobPath, JenkinsClient } from '../../src/jenkins/JenkinsClient';
+import { buildJobPath, JenkinsClient, parseQueueItemPath } from '../../src/jenkins/JenkinsClient';
 import { JenkinsClientPool } from '../../src/jenkins/JenkinsClientPool';
 import type { JenkinsHttpClient, JenkinsHttpRequest, JenkinsHttpResponse } from '../../src/jenkins/JenkinsHttpClient';
+import { GET_JOB_TREE, LIST_JOBS_TREE } from '../../src/jenkins/types';
 
 function createMockHttpClient(handler: (req: JenkinsHttpRequest) => Promise<Partial<JenkinsHttpResponse>>): JenkinsHttpClient {
   return {
@@ -85,6 +86,14 @@ describe('buildJobPath', () => {
     expect(buildJobPath('folder with spaces/job#1/job?2')).toBe(
       '/job/folder%20with%20spaces/job/job%231/job/job%3F2'
     );
+  });
+});
+
+describe('parseQueueItemPath', () => {
+  it('extracts the queue item API path from absolute or relative URLs', () => {
+    expect(parseQueueItemPath('https://ci.example.com/queue/item/123/')).toBe('/queue/item/123/api/json');
+    expect(parseQueueItemPath('/queue/item/9')).toBe('/queue/item/9/api/json');
+    expect(parseQueueItemPath('not-a-queue-url')).toBeUndefined();
   });
 });
 
@@ -190,6 +199,45 @@ describe('JenkinsClient API operations', () => {
     });
   });
 
+  it('listJobs maps healthReport and lastBuild onto job summaries', async () => {
+    const httpClient = createMockHttpClient(async (req) => {
+      expect(req.query?.tree).toBe(LIST_JOBS_TREE);
+      return {
+        text: JSON.stringify({
+          jobs: [
+            {
+              _class: 'hudson.model.FreeStyleProject',
+              name: 'stable',
+              url: 'https://ci.example.com/job/stable/',
+              color: 'blue',
+              healthReport: [
+                {
+                  score: 80,
+                  description: 'Build stability: 4 out of the last 5 builds were successful.'
+                }
+              ],
+              lastBuild: {
+                number: 12,
+                url: 'https://ci.example.com/job/stable/12/',
+                result: 'SUCCESS',
+                building: false,
+                timestamp: 9,
+                duration: 1000
+              }
+            }
+          ]
+        })
+      };
+    });
+    const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+    const client = new JenkinsClient({ httpClient, authenticator });
+    const jobs = await client.listJobs();
+    expect(jobs[0]?.healthScore).toBe(80);
+    expect(jobs[0]?.healthDescription).toContain('4 out of the last 5');
+    expect(jobs[0]?.lastBuild?.number).toBe(12);
+    expect(jobs[0]?.lastBuild?.result).toBe('SUCCESS');
+  });
+
   it('listJobs within a subfolder builds nested path and fullNames', async () => {
     const httpClient = createMockHttpClient(async (req) => {
       expect(req.path).toBe('/job/dev-folder/job/team-a/api/json');
@@ -220,6 +268,7 @@ describe('JenkinsClient API operations', () => {
   it('getJob extracts metadata, parameters, and lastBuild references', async () => {
     const httpClient = createMockHttpClient(async (req) => {
       expect(req.path).toBe('/job/folder/job/my-job/api/json');
+      expect(req.query?.tree).toBe(GET_JOB_TREE);
       return {
         text: JSON.stringify({
           name: 'my-job',
@@ -585,6 +634,41 @@ describe('JenkinsClient API operations', () => {
       expect(paged).toHaveLength(2);
       expect(paged[0]?.number).toBe(4);
       expect(paged[1]?.number).toBe(3);
+    });
+
+    it('listBuilds asks Jenkins for a bounded tree range', async () => {
+      const httpClient = createMockHttpClient(async (req) => {
+        expect(String(req.query?.tree)).toContain('{0,3}');
+        return {
+          text: JSON.stringify({
+            builds: [
+              { number: 5, result: 'SUCCESS', building: false, timestamp: 5000, duration: 100, url: '.../5/' },
+              { number: 4, result: 'FAILURE', building: false, timestamp: 4000, duration: 200, url: '.../4/' },
+              { number: 3, result: 'UNSTABLE', building: false, timestamp: 3000, duration: 150, url: '.../3/' }
+            ]
+          })
+        };
+      });
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+      const paged = await client.listBuilds('app', { offset: 1, limit: 2 });
+      expect(paged.map((b) => b.number)).toEqual([4, 3]);
+    });
+
+    it('getQueueItem polls the queue item JSON API', async () => {
+      const httpClient = createMockHttpClient(async (req) => {
+        expect(req.path).toBe('/queue/item/77/api/json');
+        return {
+          text: JSON.stringify({
+            cancelled: false,
+            executable: { number: 18, url: 'https://ci.example.com/job/app/18/' }
+          })
+        };
+      });
+      const authenticator = new JenkinsAuthenticator({ authMode: 'none' });
+      const client = new JenkinsClient({ httpClient, authenticator });
+      const item = await client.getQueueItem('https://ci.example.com/queue/item/77/');
+      expect(item.executable?.number).toBe(18);
     });
 
     it('getBuild retrieves detailed build status', async () => {

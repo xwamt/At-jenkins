@@ -24,6 +24,10 @@ export interface JobSummary {
   isFolder?: boolean;
   isBuildable?: boolean;
   isMultibranch?: boolean;
+  inQueue?: boolean;
+  healthScore?: number;
+  healthDescription?: string;
+  lastBuild?: BuildSummary;
 }
 
 export interface JobParameterDefinition {
@@ -94,3 +98,32 @@ export interface ListBuildsOptions {
 export interface TriggerBuildResult {
   queueUrl?: string;
 }
+
+export interface QueueExecutable {
+  number: number;
+  url?: string;
+}
+
+export interface QueueItem {
+  cancelled?: boolean;
+  why?: string;
+  executable?: QueueExecutable;
+}
+
+/** Compact `tree=` selector used when listing jobs (avoids huge unfiltered graphs). */
+export const LIST_JOBS_TREE =
+  'jobs[name,_class,url,color,buildable,inQueue,jobs[name],healthReport[score,description],lastBuild[number,result,building,timestamp,duration,url,displayName]]';
+
+export const BUILD_SUMMARY_TREE_FIELDS =
+  'number,result,building,timestamp,duration,estimatedDuration,url,displayName,fullDisplayName';
+
+/** Compact `tree=` selector used when fetching job detail (avoids downloading every build). */
+export const GET_JOB_TREE = [
+  'name,url,description,color,_class,buildable,inQueue,nextBuildNumber',
+  'property[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]',
+  'actions[parameterDefinitions[name,type,description,defaultParameterValue[value],choices]]',
+  `lastBuild[${BUILD_SUMMARY_TREE_FIELDS}]`,
+  `lastSuccessfulBuild[${BUILD_SUMMARY_TREE_FIELDS}]`,
+  `lastFailedBuild[${BUILD_SUMMARY_TREE_FIELDS}]`,
+  `lastCompletedBuild[${BUILD_SUMMARY_TREE_FIELDS}]`
+].join(',');

@@ -392,6 +392,7 @@ export const window = {
   },
   showTextDocument: async (document: TextDocument) => document,
   createStatusBarItem: (_alignment?: StatusBarAlignment, _priority?: number) => new StatusBarItem(),
+  activeTextEditor: undefined as { document: { uri: Uri } } | undefined,
   tabGroups: {
     onDidChangeTabs: didChangeTabs.event,
     __fireDidChangeTabs: (event: { closed: unknown[] }) => didChangeTabs.fire(event)
@@ -556,7 +557,11 @@ export const workspace = {
 export const env = {
   clipboard: {
     writeText: async (_value: string) => undefined
-  }
+  },
+  openExternal: async (_uri: Uri) => true,
+  appName: 'Visual Studio Code',
+  appRoot: '/fake',
+  uriScheme: 'vscode'
 };
 
 export enum ViewColumn {

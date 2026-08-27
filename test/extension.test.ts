@@ -71,6 +71,8 @@ describe('extension activation and commands', () => {
     expect(registered.has('atJenkins.followBuildLogInOutput')).toBe(true);
     expect(registered.has('atJenkins.triggerBuild')).toBe(true);
     expect(registered.has('atJenkins.stopBuild')).toBe(true);
+    expect(registered.has('atJenkins.openJobSummary')).toBe(true);
+    expect(registered.has('atJenkins.openInJenkins')).toBe(true);
 
     // Document content providers registered
     const providers = (vscode.workspace as any).__getContentProviders();

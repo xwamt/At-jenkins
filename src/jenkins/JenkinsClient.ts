@@ -1,6 +1,6 @@
 import type { JenkinsInstanceConfig } from '../config/schema';
 import { asRedactedLog, noopLog, type AtJenkinsLog } from '../utils/logger';
-import { ReadOnly, Unsupported } from './errors';
+import { NotFound, ReadOnly, Unsupported } from './errors';
 import type { JenkinsAuthenticator } from './JenkinsAuthenticator';
 import type { JenkinsHttpClient } from './JenkinsHttpClient';
 import { truncateBuildLog } from './logTruncate';
@@ -14,8 +14,10 @@ import type {
   LogTruncateOptions,
   LogTruncateResult,
   PipelineScript,
+  QueueItem,
   TriggerBuildResult
 } from './types';
+import { BUILD_SUMMARY_TREE_FIELDS, GET_JOB_TREE, LIST_JOBS_TREE } from './types';
 
 export interface JenkinsClientOptions {
   httpClient: JenkinsHttpClient;
@@ -24,13 +26,21 @@ export interface JenkinsClientOptions {
   log?: AtJenkinsLog;
 }
 
+interface RawHealthReport {
+  score?: number;
+  description?: string;
+}
+
 interface RawJobItem {
   _class?: string;
   name: string;
   url: string;
   color?: string;
   buildable?: boolean;
+  inQueue?: boolean;
   jobs?: RawJobItem[];
+  healthReport?: RawHealthReport[];
+  lastBuild?: BuildSummary;
 }
 
 interface RawParameterDefinition {
@@ -84,6 +94,22 @@ export function buildJobPath(fullName: string): string {
   return segments.map((seg) => `/job/${encodeURIComponent(seg)}`).join('');
 }
 
+/**
+ * Maps a Jenkins queue item URL (`…/queue/item/123/` or a relative path)
+ * to the JSON API path used to poll whether the item has left the queue.
+ */
+export function parseQueueItemPath(queueUrl: string): string | undefined {
+  const trimmed = queueUrl.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const match = trimmed.match(/\/queue\/item\/(\d+)\/?/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  return `/queue/item/${match[1]}/api/json`;
+}
+
 export class JenkinsClient {
   private readonly httpClient: JenkinsHttpClient;
   private readonly authenticator: JenkinsAuthenticator;
@@ -126,7 +152,7 @@ export class JenkinsClient {
       return this.httpClient.requestJson<{ jobs?: RawJobItem[] }>({
         method: 'GET',
         path,
-        query: { tree: 'jobs[name,_class,url,color,buildable,jobs[name]]' },
+        query: { tree: LIST_JOBS_TREE },
         headers
       });
     }, 'GET');
@@ -147,8 +173,10 @@ export class JenkinsClient {
         item.buildable ?? (!isFolder && item.color !== undefined && item.color !== 'disabled');
 
       const fullName = folderFullName ? `${folderFullName}/${item.name}` : item.name;
+      const health = item.healthReport?.[0];
+      const lastBuild = normalizeBuildSummary(item.lastBuild);
 
-      return {
+      const summary: JobSummary = {
         name: item.name,
         fullName,
         url: item.url,
@@ -158,6 +186,19 @@ export class JenkinsClient {
         isBuildable,
         isMultibranch
       };
+      if (item.inQueue !== undefined) {
+        summary.inQueue = item.inQueue;
+      }
+      if (typeof health?.score === 'number') {
+        summary.healthScore = health.score;
+        if (health.description) {
+          summary.healthDescription = health.description;
+        }
+      }
+      if (lastBuild) {
+        summary.lastBuild = lastBuild;
+      }
+      return summary;
     });
   }
 
@@ -172,6 +213,7 @@ export class JenkinsClient {
       return this.httpClient.requestJson<RawJobDetail>({
         method: 'GET',
         path,
+        query: { tree: GET_JOB_TREE },
         headers
       });
     }, 'GET');
@@ -220,10 +262,10 @@ export class JenkinsClient {
       inQueue: raw.inQueue,
       nextBuildNumber: raw.nextBuildNumber,
       parameters: parameterDefinitions.length > 0 ? parameterDefinitions : undefined,
-      lastBuild: raw.lastBuild,
-      lastSuccessfulBuild: raw.lastSuccessfulBuild,
-      lastFailedBuild: raw.lastFailedBuild,
-      lastCompletedBuild: raw.lastCompletedBuild
+      lastBuild: normalizeBuildSummary(raw.lastBuild),
+      lastSuccessfulBuild: normalizeBuildSummary(raw.lastSuccessfulBuild),
+      lastFailedBuild: normalizeBuildSummary(raw.lastFailedBuild),
+      lastCompletedBuild: normalizeBuildSummary(raw.lastCompletedBuild)
     };
   }
 
@@ -333,24 +375,49 @@ export class JenkinsClient {
     const jobPath = buildJobPath(fullName);
     const path = `${jobPath}/api/json`;
 
+    const offset = Math.max(0, opts?.offset ?? 0);
+    const limit = opts?.limit;
+    const end = limit !== undefined ? offset + Math.max(0, limit) : undefined;
+    const range = end !== undefined ? `{0,${end}}` : '';
+
     const res = await this.authenticator.withAuthRetry(async (headers) => {
       return this.httpClient.requestJson<{ builds?: BuildSummary[] }>({
         method: 'GET',
         path,
         query: {
-          tree: 'builds[number,result,building,timestamp,duration,estimatedDuration,url,displayName,fullDisplayName]'
+          tree: `builds[${BUILD_SUMMARY_TREE_FIELDS}]${range}`
         },
         headers
       });
     }, 'GET');
 
-    const builds = res?.builds ?? [];
-    if (opts?.offset !== undefined || opts?.limit !== undefined) {
-      const offset = Math.max(0, opts.offset ?? 0);
-      const limit = opts.limit !== undefined ? Math.max(0, opts.limit) : builds.length;
-      return builds.slice(offset, offset + limit);
+    const builds = (res?.builds ?? []).map((build) => normalizeBuildSummary(build)).filter(
+      (build): build is BuildSummary => Boolean(build)
+    );
+    if (end !== undefined) {
+      return builds.slice(offset, end);
     }
     return builds;
+  }
+
+  /**
+   * Polls a queue item until Jenkins assigns an executable build number
+   * (or the item is cancelled / evaporates).
+   */
+  async getQueueItem(queueUrl: string): Promise<QueueItem> {
+    const path = parseQueueItemPath(queueUrl);
+    if (!path) {
+      throw new NotFound(`Jenkins queue item URL is invalid: ${queueUrl}`, queueUrl, 404);
+    }
+
+    return this.authenticator.withAuthRetry(async (headers) => {
+      return this.httpClient.requestJson<QueueItem>({
+        method: 'GET',
+        path,
+        query: { tree: 'cancelled,why,executable[number,url]' },
+        headers
+      });
+    }, 'GET');
   }
 
   /**
@@ -453,6 +520,23 @@ export class JenkinsClient {
       });
     }, 'POST');
   }
+}
+
+function normalizeBuildSummary(raw?: Partial<BuildSummary> | null): BuildSummary | undefined {
+  if (!raw || typeof raw.number !== 'number') {
+    return undefined;
+  }
+  return {
+    number: raw.number,
+    url: raw.url ?? '',
+    result: raw.result,
+    building: Boolean(raw.building),
+    timestamp: raw.timestamp ?? 0,
+    duration: raw.duration ?? 0,
+    estimatedDuration: raw.estimatedDuration,
+    displayName: raw.displayName,
+    fullDisplayName: raw.fullDisplayName
+  };
 }
 
 function isCpsFlowDefinitionXml(xml: string): boolean {

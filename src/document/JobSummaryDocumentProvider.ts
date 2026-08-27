@@ -48,6 +48,13 @@ export function formatJobSummaryMarkdown(job: JobDetail): string {
     `- **${t('Status')}:** ${job.color ?? t('Unknown')}`
   ];
 
+  if (job.inQueue) {
+    lines.push(`- **${t('In Queue')}:** ${t('Yes')}`);
+  }
+  if (job.nextBuildNumber !== undefined) {
+    lines.push(`- **${t('Next Build Number')}:** ${job.nextBuildNumber}`);
+  }
+
   if (job.description) {
     lines.push('', `## ${t('Description')}`, '', job.description);
   }
@@ -77,14 +84,29 @@ export function formatJobSummaryMarkdown(job: JobDetail): string {
     lines.push('', `## ${t('Parameters')}`, '', t('This job has no parameters.'));
   }
 
-  if (job.lastBuild) {
-    lines.push(
-      '',
-      `## ${t('Last Build')}`,
-      '',
-      `- **#${job.lastBuild.number}** — ${job.lastBuild.building ? t('Building') : job.lastBuild.result ?? t('Unknown')}`
-    );
-  }
+  appendBuildSection(lines, t('Last Build'), job.lastBuild);
+  appendBuildSection(lines, t('Last Successful Build'), job.lastSuccessfulBuild);
+  appendBuildSection(lines, t('Last Failed Build'), job.lastFailedBuild);
+  appendBuildSection(lines, t('Last Completed Build'), job.lastCompletedBuild);
 
   return `${lines.join('\n')}\n`;
+}
+
+function appendBuildSection(
+  lines: string[],
+  title: string,
+  build: JobDetail['lastBuild']
+): void {
+  if (!build) {
+    return;
+  }
+  lines.push(
+    '',
+    `## ${title}`,
+    '',
+    `- **#${build.number}** — ${build.building ? t('Building') : build.result ?? t('Unknown')}`
+  );
+  if (build.url) {
+    lines.push(`- **${t('URL')}:** ${build.url}`);
+  }
 }

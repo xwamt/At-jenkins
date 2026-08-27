@@ -119,6 +119,11 @@
         "command": "atJenkins.followBuildLogInOutput",
         "title": "%atJenkins.command.followBuildLogInOutput.title%",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "atJenkins.openInJenkins",
+        "title": "%atJenkins.command.openInJenkins.title%",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -236,6 +241,23 @@
           "command": "atJenkins.followBuildLogInOutput",
           "when": "view == atJenkins.jobs && (viewItem == jenkinsBuild || viewItem =~ /^jenkinsBuild\\./)",
           "group": "atJenkins.action@1"
+        },
+        {
+          "command": "atJenkins.openInJenkins",
+          "when": "view == atJenkins.instances && viewItem =~ /^atJenkins\\.instance/",
+          "group": "atJenkins.action@4"
+        },
+        {
+          "command": "atJenkins.openInJenkins",
+          "when": "view == atJenkins.jobs && (viewItem == jenkinsFolder || viewItem == jenkinsJob || viewItem =~ /^jenkinsJob\\./ || viewItem == jenkinsBuild || viewItem =~ /^jenkinsBuild\\./)",
+          "group": "atJenkins.action@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "atJenkins.openInJenkins",
+          "when": "resourceScheme == at-jenkins || resourceScheme == at-jenkins-draft",
+          "group": "navigation"
         }
       ]
     },

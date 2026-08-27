@@ -6,6 +6,7 @@ import {
   triggerBuildHandler,
   type BuildCommandsContext
 } from '../../src/commands/buildCommands';
+import { clearRecentParamsCache } from '../../src/commands/recentParams';
 import type { JenkinsInstanceConfigManager } from '../../src/config/JenkinsInstanceConfigManager';
 import type { JenkinsInstanceConfig } from '../../src/config/schema';
 import { t } from '../../src/i18n/t';
@@ -53,6 +54,7 @@ describe('buildCommands', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearRecentParamsCache();
     mockClient = {
       config: { ...instanceConfig },
       getJob: vi.fn(),
@@ -139,7 +141,8 @@ describe('buildCommands', () => {
       expect(mockClient.triggerBuild).toHaveBeenCalledWith('deploy-app', undefined);
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining('deploy-app'),
-        expect.anything()
+        t('Open Job Summary'),
+        t('Open in Jenkins')
       );
       expect(mockJobsTreeProvider.refresh).toHaveBeenCalledWith();
     });
@@ -224,7 +227,8 @@ describe('buildCommands', () => {
       });
       expect(vscode.window.showInformationMessage).toHaveBeenCalledWith(
         expect.stringContaining('release-job'),
-        expect.anything()
+        t('Open Job Summary'),
+        t('Open in Jenkins')
       );
     });
 
@@ -246,17 +250,19 @@ describe('buildCommands', () => {
       mockClient.getJob.mockResolvedValue(paramJobDetail);
       vi.spyOn(vscode.window, 'showWarningMessage').mockResolvedValue(t('Trigger Build') as never);
 
-      // First run: enter 'feature/login'
       const inputSpy = vi.spyOn(vscode.window, 'showInputBox').mockResolvedValueOnce('feature/login' as never);
       await triggerBuildHandler(context, 'param-memory-job');
 
-      // Second run: verify prompt defaults to 'feature/login'
+      vi.spyOn(vscode.window, 'showQuickPick').mockResolvedValueOnce({
+        label: t('Use recent parameters')
+      } as never);
+      mockClient.triggerBuild.mockClear();
       await triggerBuildHandler(context, 'param-memory-job');
-      expect(inputSpy).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          value: 'feature/login'
-        })
-      );
+
+      expect(inputSpy).toHaveBeenCalledTimes(1);
+      expect(mockClient.triggerBuild).toHaveBeenCalledWith('param-memory-job', {
+        BRANCH: 'feature/login'
+      });
     });
 
     it('aborts cleanly if user cancels parameter prompt (Choice)', async () => {

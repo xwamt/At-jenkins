@@ -35,6 +35,8 @@ import {
 import { formatError } from './utils/errors';
 import { createRedactedLog } from './utils/logger';
 import { registerBuildCommands } from './commands/buildCommands';
+import { JenkinsBuildFollowService } from './commands/buildFollow';
+import { openInJenkinsHandler } from './commands/openInJenkins';
 import { JenkinsStatusBarManager } from './utils/statusBar';
 import { JenkinsInstancePanel } from './webview/JenkinsInstancePanel';
 import { disposeOpenPanels } from './webview/openPanels';
@@ -76,6 +78,21 @@ export function activate(context: vscode.ExtensionContext): void {
     treeDataProvider: jobsTreeProvider
   });
   context.subscriptions.push(jobsTreeView);
+
+  const followService = new JenkinsBuildFollowService();
+  context.subscriptions.push(followService);
+
+  const syncJobsViewChrome = async (): Promise<void> => {
+    try {
+      const active = await configManager.getActiveInstance();
+      jobsTreeView.message = active
+        ? t('Controller: {label}', { label: active.label })
+        : undefined;
+    } catch {
+      jobsTreeView.message = undefined;
+    }
+  };
+  void syncJobsViewChrome();
 
   const draftFileSystemProvider = new JenkinsPipelineDraftFileSystemProvider();
   const pipelineScriptProvider = new PipelineScriptDocumentProvider(
@@ -151,6 +168,7 @@ export function activate(context: vscode.ExtensionContext): void {
     instancesTreeProvider.refresh();
     jobsTreeProvider.refresh();
     void syncStatusBar();
+    void syncJobsViewChrome();
   };
 
   context.subscriptions.push(
@@ -587,8 +605,19 @@ export function activate(context: vscode.ExtensionContext): void {
     clientPool,
     jobsTreeProvider,
     statusBar,
+    followService,
+    globalState: context.globalState,
     log
   });
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'atJenkins.openInJenkins',
+      async (target?: Parameters<typeof openInJenkinsHandler>[0]) => {
+        return openInJenkinsHandler(target, configManager);
+      }
+    )
+  );
 
   const toolService = new JenkinsAgentToolService({
     configManager,

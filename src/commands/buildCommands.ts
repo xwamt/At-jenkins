@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { JenkinsInstanceConfigManager } from '../config/JenkinsInstanceConfigManager';
+import type { ExtensionMemento, JenkinsInstanceConfigManager } from '../config/JenkinsInstanceConfigManager';
 import { t } from '../i18n/t';
 import type { JenkinsClientPool } from '../jenkins/JenkinsClientPool';
 import type { JobParameterDefinition } from '../jenkins/types';
@@ -10,18 +10,25 @@ import {
 } from '../tree/JobsTreeProvider';
 import { formatError } from '../utils/errors';
 import { asRedactedLog, noopLog, type AtJenkinsLog } from '../utils/logger';
-
 import type { JenkinsStatusBarManager } from '../utils/statusBar';
+import type { JenkinsBuildFollowService } from './buildFollow';
+import {
+  defaultParameterValues,
+  jobParamsKey,
+  readRecentParams,
+  sanitizeParamsForStorage,
+  writeRecentParams
+} from './recentParams';
 
 export interface BuildCommandsContext {
   configManager: JenkinsInstanceConfigManager;
   clientPool: JenkinsClientPool;
   jobsTreeProvider?: JobsTreeProvider;
   statusBar?: JenkinsStatusBarManager;
+  followService?: JenkinsBuildFollowService;
+  globalState?: ExtensionMemento;
   log?: AtJenkinsLog;
 }
-
-const recentParamsCache = new Map<string, Record<string, string | number | boolean>>();
 
 export type TriggerBuildTarget =
   | JenkinsJobTreeItem
@@ -85,19 +92,14 @@ export async function triggerBuildHandler(
     }
 
     const job = await client.getJob(jobFullName);
-    const jobKey = `${instanceId}:${jobFullName}`;
-    const previousParams = recentParamsCache.get(jobKey);
+    const jobKey = jobParamsKey(instanceId, jobFullName);
+    const previousParams = readRecentParams(context.globalState, jobKey);
 
     let collectedParams: Record<string, string | number | boolean> | undefined;
     if (job.parameters && job.parameters.length > 0) {
-      collectedParams = {};
-      for (const param of job.parameters) {
-        const paramValue = await promptParameterValue(param, previousParams?.[param.name]);
-        if (paramValue === undefined) {
-          // User dismissed or cancelled the parameter prompt
-          return false;
-        }
-        collectedParams[param.name] = paramValue;
+      collectedParams = await collectJobParameters(job.parameters, previousParams, jobFullName);
+      if (!collectedParams) {
+        return false;
       }
     }
 
@@ -112,20 +114,39 @@ export async function triggerBuildHandler(
       return false;
     }
 
-    await client.triggerBuild(jobFullName, collectedParams);
+    const triggerResult = await client.triggerBuild(jobFullName, collectedParams);
 
     if (collectedParams) {
-      recentParamsCache.set(jobKey, collectedParams);
+      const stored = sanitizeParamsForStorage(collectedParams, job.parameters ?? []);
+      await writeRecentParams(context.globalState, jobKey, stored);
     }
 
     void vscode.window.showInformationMessage(
       t('Build triggered for "{job}".', { job: jobFullName }),
-      t('Open Job Summary')
+      t('Open Job Summary'),
+      t('Open in Jenkins')
     ).then(async (action) => {
       if (action === t('Open Job Summary')) {
         await vscode.commands.executeCommand('atJenkins.openJobSummary', { instanceId, jobFullName });
+      } else if (action === t('Open in Jenkins')) {
+        await vscode.commands.executeCommand('atJenkins.openInJenkins', {
+          instanceId,
+          jobFullName,
+          url: job.url
+        });
       }
     });
+
+    if (context.followService) {
+      void context.followService.follow({
+        client,
+        jobFullName,
+        queueUrl: triggerResult?.queueUrl,
+        statusBar: context.statusBar,
+        jobsTreeProvider: context.jobsTreeProvider,
+        log
+      });
+    }
 
     if (context.jobsTreeProvider) {
       if (jobItem) {
@@ -146,6 +167,76 @@ export async function triggerBuildHandler(
     );
     return false;
   }
+}
+
+async function collectJobParameters(
+  parameters: JobParameterDefinition[],
+  previousParams: Record<string, string | number | boolean> | undefined,
+  jobFullName: string
+): Promise<Record<string, string | number | boolean> | undefined> {
+  const hasRecent = previousParams && Object.keys(previousParams).length > 0;
+  let mode: 'recent' | 'edit' | 'defaults' = 'edit';
+
+  if (hasRecent) {
+    const useRecent = t('Use recent parameters');
+    const editParams = t('Edit parameters');
+    const useDefaults = t('Use default parameters');
+    const selected = await vscode.window.showQuickPick(
+      [
+        {
+          label: useRecent,
+          description: t('Reuse the last values submitted for this job')
+        },
+        {
+          label: editParams,
+          description: t('Review and change each parameter')
+        },
+        {
+          label: useDefaults,
+          description: t('Reset every parameter to its job default')
+        }
+      ],
+      {
+        title: t('Parameter: {name}', { name: jobFullName }),
+        placeHolder: t('How do you want to fill parameters for "{job}"?', { job: jobFullName })
+      }
+    );
+    if (!selected) {
+      return undefined;
+    }
+    if (selected.label === useRecent) {
+      mode = 'recent';
+    } else if (selected.label === useDefaults) {
+      mode = 'defaults';
+    }
+  }
+
+  if (mode === 'recent' && previousParams) {
+    return {
+      ...defaultParameterValues(parameters),
+      ...previousParams
+    };
+  }
+
+  if (mode === 'defaults') {
+    const values = defaultParameterValues(parameters);
+    for (const param of parameters) {
+      if (values[param.name] === undefined) {
+        values[param.name] = param.choices?.[0] ?? '';
+      }
+    }
+    return values;
+  }
+
+  const collected: Record<string, string | number | boolean> = {};
+  for (const param of parameters) {
+    const paramValue = await promptParameterValue(param, previousParams?.[param.name]);
+    if (paramValue === undefined) {
+      return undefined;
+    }
+    collected[param.name] = paramValue;
+  }
+  return collected;
 }
 
 /**

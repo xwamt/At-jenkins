@@ -29,6 +29,20 @@ export class JenkinsErrorTreeItem extends vscode.TreeItem {
     this.contextValue = 'jenkinsError';
     this.iconPath = new vscode.ThemeIcon('error', new vscode.ThemeColor('charts.red'));
     this.tooltip = errorMessage;
+    this.command = {
+      command: 'atJenkins.refreshJobs',
+      title: t('Refresh Jobs')
+    };
+  }
+}
+
+export class JenkinsEmptyJobsTreeItem extends vscode.TreeItem {
+  constructor() {
+    super(t('No jobs found on this controller'), vscode.TreeItemCollapsibleState.None);
+    this.id = 'atJenkins.emptyJobs';
+    this.contextValue = 'jenkinsEmpty';
+    this.iconPath = new vscode.ThemeIcon('inbox');
+    this.tooltip = t('This controller has no jobs, or the current user cannot see any.');
   }
 }
 
@@ -51,6 +65,23 @@ export interface WeatherReport {
   description: string;
 }
 
+export function weatherFromHealthScore(score: number, description?: string): WeatherReport {
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  let icon = '☀️';
+  let fallback = t('Sunny (100% build stability)');
+  if (clamped >= 80 && clamped < 100) {
+    icon = '⛅';
+    fallback = t('Mostly Sunny ({score}% build stability)', { score: String(clamped) });
+  } else if (clamped >= 40 && clamped < 80) {
+    icon = '🌧️';
+    fallback = t('Rainy ({score}% build stability)', { score: String(clamped) });
+  } else if (clamped < 40) {
+    icon = '⛈️';
+    fallback = t('Stormy ({score}% build stability)', { score: String(clamped) });
+  }
+  return { icon, score: clamped, description: description || fallback };
+}
+
 export function calculateWeatherScore(builds: BuildSummary[]): WeatherReport | undefined {
   if (!builds || builds.length === 0) {
     return undefined;
@@ -62,21 +93,17 @@ export function calculateWeatherScore(builds: BuildSummary[]): WeatherReport | u
   const sample = completed.slice(0, 5);
   const passed = sample.filter((b) => b.result?.toUpperCase() === 'SUCCESS').length;
   const score = Math.round((passed / sample.length) * 100);
+  return weatherFromHealthScore(score);
+}
 
-  let icon = '☀️';
-  let description = t('Sunny (100% build stability)');
-  if (score >= 80 && score < 100) {
-    icon = '⛅';
-    description = t('Mostly Sunny ({score}% build stability)', { score: String(score) });
-  } else if (score >= 40 && score < 80) {
-    icon = '🌧️';
-    description = t('Rainy ({score}% build stability)', { score: String(score) });
-  } else if (score < 40) {
-    icon = '⛈️';
-    description = t('Stormy ({score}% build stability)', { score: String(score) });
+export function weatherForJob(job: JobSummary): WeatherReport | undefined {
+  if (typeof job.healthScore === 'number') {
+    return weatherFromHealthScore(job.healthScore, job.healthDescription);
   }
-
-  return { icon, score, description };
+  if (job.lastBuild) {
+    return calculateWeatherScore([job.lastBuild]);
+  }
+  return undefined;
 }
 
 export function formatJobTypeBadge(job: JobSummary): string | undefined {
@@ -103,10 +130,17 @@ export class JenkinsJobTreeItem extends vscode.TreeItem {
     this.contextValue = resolveJobContextValue(job);
     this.iconPath = getJobIcon(job.color);
     const badge = formatJobTypeBadge(job);
-    const isBuilding = job.color?.endsWith('_anime');
+    const isBuilding = job.color?.endsWith('_anime') || Boolean(job.lastBuild?.building);
+    const isQueued = Boolean(job.inQueue) && !isBuilding;
     this.description = [
       badge,
-      isBuilding ? t('Building...') : weather ? `${weather.icon} ${weather.score}%` : undefined
+      isBuilding
+        ? t('Building...')
+        : isQueued
+          ? t('Queued')
+          : weather
+            ? `${weather.icon} ${weather.score}%`
+            : undefined
     ]
       .filter(Boolean)
       .join(' ');
@@ -158,6 +192,7 @@ export class JenkinsBuildsMoreTreeItem extends vscode.TreeItem {
 export type JobsTreeItem =
   | JenkinsNoActiveInstanceTreeItem
   | JenkinsErrorTreeItem
+  | JenkinsEmptyJobsTreeItem
   | JenkinsFolderTreeItem
   | JenkinsJobTreeItem
   | JenkinsBuildTreeItem
@@ -251,10 +286,13 @@ export class JobsTreeProvider implements vscode.TreeDataProvider<JobsTreeItem> {
     try {
       const client = await this.clientPool.get(activeInstance.id);
       const jobs = await client.listJobs();
+      if (jobs.length === 0) {
+        return [new JenkinsEmptyJobsTreeItem()];
+      }
       return jobs.map((job) =>
         job.isFolder
           ? new JenkinsFolderTreeItem(job, activeInstance.id)
-          : new JenkinsJobTreeItem(job, activeInstance.id)
+          : new JenkinsJobTreeItem(job, activeInstance.id, weatherForJob(job))
       );
     } catch (err) {
       this.log.error(`Failed to list root jobs: ${formatError(err)}`);
@@ -266,10 +304,13 @@ export class JobsTreeProvider implements vscode.TreeDataProvider<JobsTreeItem> {
     try {
       const client = await this.clientPool.get(element.instanceId);
       const jobs = await client.listJobs(element.folder.fullName);
+      if (jobs.length === 0) {
+        return [new JenkinsEmptyJobsTreeItem()];
+      }
       return jobs.map((job) =>
         job.isFolder
           ? new JenkinsFolderTreeItem(job, element.instanceId)
-          : new JenkinsJobTreeItem(job, element.instanceId)
+          : new JenkinsJobTreeItem(job, element.instanceId, weatherForJob(job))
       );
     } catch (err) {
       this.log.error(`Failed to list jobs in folder '${element.folder.fullName}': ${formatError(err)}`);
@@ -400,9 +441,11 @@ export function formatTimestamp(timestampMs?: number): string {
   return new Date(timestampMs).toLocaleString();
 }
 
-function formatBuildDescription(build: BuildSummary): string {
+export function formatBuildDescription(build: BuildSummary, nowMs: number = Date.now()): string {
   if (build.building) {
-    return t('Building...');
+    const elapsedMs = build.timestamp ? Math.max(0, nowMs - build.timestamp) : 0;
+    const elapsed = elapsedMs > 0 ? formatDuration(elapsedMs) : '';
+    return elapsed ? t('Building... {elapsed}', { elapsed }) : t('Building...');
   }
   const parts: string[] = [];
   if (build.duration !== undefined && build.duration > 0) {
@@ -432,8 +475,17 @@ function buildJobTooltip(job: JobSummary, weather?: WeatherReport): vscode.Markd
   if (typeBadge) {
     md.appendMarkdown(`- **${t('Type')}:** \`${typeBadge.replace(/[\[\]]/g, '')}\`\n`);
   }
+  if (job.inQueue) {
+    md.appendMarkdown(`- **${t('In Queue')}:** ${t('Yes')}\n`);
+  }
   if (weather) {
     md.appendMarkdown(`- **${t('Stability')}:** ${weather.icon} ${weather.description}\n`);
+  }
+  if (job.lastBuild) {
+    const last = job.lastBuild.building
+      ? t('Building')
+      : job.lastBuild.result || t('Unknown');
+    md.appendMarkdown(`- **${t('Last Build')}:** #${job.lastBuild.number} (${last})\n`);
   }
   if (job.color) {
     md.appendMarkdown(`- **${t('Status')}:** ${job.color}\n`);
@@ -457,7 +509,15 @@ function buildBuildTooltip(build: BuildSummary, jobFullName: string): vscode.Mar
   if (build.timestamp) {
     md.appendMarkdown(`- **${t('Started')}:** ${new Date(build.timestamp).toISOString()}\n`);
   }
-  if (build.duration !== undefined && build.duration > 0) {
+  if (build.building) {
+    const elapsedMs = build.timestamp ? Math.max(0, Date.now() - build.timestamp) : 0;
+    if (elapsedMs > 0) {
+      md.appendMarkdown(`- **${t('Duration')}:** ${formatDuration(elapsedMs)}\n`);
+    }
+    if (build.estimatedDuration && build.estimatedDuration > 0) {
+      md.appendMarkdown(`- **${t('Estimated')}:** ${formatDuration(build.estimatedDuration)}\n`);
+    }
+  } else if (build.duration !== undefined && build.duration > 0) {
     md.appendMarkdown(`- **${t('Duration')}:** ${formatDuration(build.duration)}\n`);
   }
   if (build.url) {

@@ -34,6 +34,14 @@ describe('JobSummaryDocumentProvider', () => {
         result: 'SUCCESS',
         timestamp: 1,
         duration: 1000
+      },
+      lastSuccessfulBuild: {
+        number: 8,
+        url: 'https://ci.example.com/job/ops/job/hotfix/8/',
+        building: false,
+        result: 'SUCCESS',
+        timestamp: 1,
+        duration: 900
       }
     };
 
@@ -45,6 +53,8 @@ describe('JobSummaryDocumentProvider', () => {
     expect(md).toContain('SECRET');
     expect(md).not.toContain('should-not-appear');
     expect(md).toContain('(hidden)');
+    expect(md).toContain('Last Successful Build');
+    expect(md).toContain('#8');
   });
 
   it('loads summary via content provider', async () => {

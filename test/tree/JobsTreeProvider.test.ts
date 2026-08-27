@@ -10,6 +10,8 @@ import { JenkinsClientPool } from '../../src/jenkins/JenkinsClientPool';
 import type { BuildSummary, JobSummary } from '../../src/jenkins/types';
 import {
   calculateWeatherScore,
+  weatherFromHealthScore,
+  formatBuildDescription,
   formatDuration,
   formatJobTypeBadge,
   formatTimestamp,
@@ -17,6 +19,7 @@ import {
   getJobIcon,
   JenkinsBuildsMoreTreeItem,
   JenkinsBuildTreeItem,
+  JenkinsEmptyJobsTreeItem,
   JenkinsErrorTreeItem,
   JenkinsFolderTreeItem,
   JenkinsJobTreeItem,
@@ -391,6 +394,37 @@ describe('JobsTreeProvider', () => {
       expect(errorItem.label).toContain('Network timeout');
       expect(errorItem.contextValue).toBe('jenkinsError');
       expect((errorItem.iconPath as vscode.ThemeIcon).id).toBe('error');
+      expect(errorItem.command).toEqual({
+        command: 'atJenkins.refreshJobs',
+        title: 'Refresh Jobs'
+      });
+    });
+
+    it('returns JenkinsEmptyJobsTreeItem when the controller has no jobs', async () => {
+      (mockClient.listJobs as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+      const children = await provider.getChildren();
+      expect(children).toHaveLength(1);
+      expect(children[0]).toBeInstanceOf(JenkinsEmptyJobsTreeItem);
+      expect(children[0]?.contextValue).toBe('jenkinsEmpty');
+    });
+
+    it('attaches weather from Jenkins healthScore onto job tree items', async () => {
+      (mockClient.listJobs as ReturnType<typeof vi.fn>).mockResolvedValue([
+        {
+          name: 'stable-job',
+          fullName: 'stable-job',
+          url: 'https://ci.example.com/job/stable-job',
+          color: 'blue',
+          _class: 'hudson.model.FreeStyleProject',
+          healthScore: 100,
+          healthDescription: 'Build stability: 5 out of the last 5 builds were successful.'
+        }
+      ]);
+      const children = await provider.getChildren();
+      const item = children[0] as JenkinsJobTreeItem;
+      expect(item.description).toContain('☀️');
+      expect(item.description).toContain('100%');
+      expect((item.tooltip as vscode.MarkdownString).value).toContain('Stability');
     });
 
     it('leaf items return empty children', async () => {
@@ -608,6 +642,29 @@ describe('JobsTreeProvider', () => {
 
       // Empty builds -> undefined
       expect(calculateWeatherScore([])).toBeUndefined();
+    });
+
+    it('weatherFromHealthScore maps Jenkins healthReport scores onto weather icons', () => {
+      expect(weatherFromHealthScore(100).icon).toBe('☀️');
+      expect(weatherFromHealthScore(80).icon).toBe('⛅');
+      expect(weatherFromHealthScore(40).icon).toBe('🌧️');
+      expect(weatherFromHealthScore(0).icon).toBe('⛈️');
+      expect(weatherFromHealthScore(95, 'custom').description).toBe('custom');
+    });
+
+    it('formatBuildDescription includes elapsed time for running builds', () => {
+      const desc = formatBuildDescription(
+        {
+          number: 9,
+          url: '',
+          building: true,
+          timestamp: 1_700_000_000_000,
+          duration: 0,
+          estimatedDuration: 120_000
+        },
+        1_700_000_045_000
+      );
+      expect(desc).toBe('Building... 45s');
     });
 
     it('formatDuration formats milliseconds into human-readable strings', () => {

@@ -18,6 +18,7 @@
   "atJenkins.command.triggerBuild.title": "Trigger Build",
   "atJenkins.command.stopBuild.title": "Stop Build",
   "atJenkins.command.followBuildLogInOutput.title": "Follow Build Log in Output",
+  "atJenkins.command.openInJenkins.title": "Open in Jenkins",
   "atJenkins.welcome.instances": "No Jenkins controllers configured.\n[Add Controller](command:atJenkins.addInstance)",
   "atJenkins.welcome.jobs": "No active controller selected or no jobs found.\n[Add Controller](command:atJenkins.addInstance)"
 }

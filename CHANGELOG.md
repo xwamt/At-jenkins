@@ -4,7 +4,7 @@
 
 ---
 
-## [Unreleased]
+## [v0.1.1] - 2026-08-31
 
 ### 客户端与安全
 - 构建日志优先走 Jenkins `logText/progressiveText`（`X-Text-Size` / `start`），缺失时回退 `/consoleText`，跟随与尾部截断不再每次下载整份日志。

@@ -12,10 +12,14 @@
 - 「在 Jenkins 中打开」仅允许 `http:` / `https:`，拒绝 `file:` / `javascript:` / `vscode:` 等服务端下发的危险 scheme。
 - Webview CSP 去掉未使用的 `style-src 'unsafe-inline'`。
 
-### UX
+### UX 与品牌
 - Jobs 树展示 `healthReport` 天气/稳定性（不再用单次 lastBuild 冒充 0%/100%）。
 - 触发构建后状态栏跟随 + 完成通知；参数化构建可复用最近一次非密钥参数。
 - 新增 `atJenkins.openInJenkins`，以及可配置的分页/轮询/日志尾部设置（`atJenkins.builds.pageSize`、`atJenkins.log.*`、`atJenkins.follow.*`）。
+- 修复插件 Logo 资源，重绘为 128×128 标准居中圆角矢量位图，解决扩展列表中图标仅占角落的问题。
+
+### 架构与规划
+- 引入完整的 v1/v2 演进规格（`0.2.0` 生产可用加固与 `0.3.0` 运维深度功能）、工程质量契约与分阶段实施计划。
 
 ---
 
